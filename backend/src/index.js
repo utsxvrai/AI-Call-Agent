@@ -2,6 +2,7 @@ require('dotenv').config();
 
 const express = require('express');
 const http = require('http');
+const routes = require('./routes');
 
 const app = express();
 const server = http.createServer(app);
@@ -19,6 +20,9 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString()
   });
 });
+
+// Routes
+app.use('/api', routes);
 
 // Start server
 server.listen(PORT, () => {
