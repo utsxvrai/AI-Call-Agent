@@ -3,9 +3,14 @@ require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const routes = require('./routes');
+const  setupTwilioMediaWebSocket  = require('./ws/twilio-media.ws');
+
+
 
 const app = express();
 const server = http.createServer(app);
+
+setupTwilioMediaWebSocket(server);
 
 const PORT = process.env.PORT || 3000;
 

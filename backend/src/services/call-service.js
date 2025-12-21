@@ -16,8 +16,14 @@ async function getGreetingTwiML(){
     const response = new twiml.VoiceResponse();
     response.say(
     { voice: 'alice', language: 'en-US' },
-    'Hello! This is a test call from your AI call agent.'
+    'Hello! Please start speaking after the beep.'
   );
+
+  response.start().stream({
+    url: `wss://${process.env.BASE_URL.replace('https://', '')}/ws/media`
+  })
+
+  response.pause({length: 60 }); //it keeps the call open for 60 seconds 
 
   return response.toString();
 }
