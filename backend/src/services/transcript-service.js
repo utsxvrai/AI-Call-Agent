@@ -4,6 +4,7 @@ const conversations = new Map(); // callSid → LLMService
 const lastSpeechTimes = new Map(); // callSid → timestamp
 const bufferedTranscripts = new Map(); // callSid → string
 const aiTriggerCallbacks = new Map(); // callSid → function
+const processingStates = new Map(); // callSid → boolean
 
 function getConversation(callSid) {
   if (!conversations.has(callSid)) {
@@ -23,8 +24,11 @@ function handlePartial({ callSid, text }) {
 }
 
 async function handleFinal({ callSid, text }) {
+  if (processingStates.get(callSid)) return null; // Already talking/thinking
+  processingStates.set(callSid, true);
+
   lastSpeechTimes.set(callSid, Date.now());
-  bufferedTranscripts.delete(callSid); // Final received, clear buffer
+  bufferedTranscripts.delete(callSid);
   console.log(`✅ [${callSid}] STT Final:`, text);
 
   const llm = getConversation(callSid);
@@ -33,8 +37,10 @@ async function handleFinal({ callSid, text }) {
     const aiReply = await llm.generateReply(text);
     console.log(`🤖 [${callSid}] AI:`, aiReply);
 
+    processingStates.set(callSid, false); // Done thinking, but TTS might still be playing
     return aiReply;
   } catch (err) {
+    processingStates.set(callSid, false);
     console.error(`❌ [${callSid}] LLM error:`, err.message);
     return null;
   }
@@ -69,6 +75,7 @@ function cleanupConversation(callSid) {
   lastSpeechTimes.delete(callSid);
   bufferedTranscripts.delete(callSid);
   aiTriggerCallbacks.delete(callSid);
+  processingStates.delete(callSid);
 }
 
 module.exports = {

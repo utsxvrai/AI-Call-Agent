@@ -19,7 +19,7 @@ async function getGreetingTwiML(){
     'Hello! Please start speaking after the beep.'
   );
 
-  response.start().stream({
+  response.connect().stream({
     url: `wss://${process.env.BASE_URL.replace('https://', '')}/ws/media`
   })
 

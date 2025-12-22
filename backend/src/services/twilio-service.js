@@ -14,14 +14,21 @@ async function createCall({ to, twimlUrl }) {
 }
 
 function sendMuLawToTwilio(ws, muLawAudio, streamSid) {
-    const message = {
-        event: 'media',
-        streamSid: streamSid,
-        media: {
-            payload: muLawAudio.toString('base64'),
-        },
-    };
-    ws.send(JSON.stringify(message));
+    if (!ws || ws.readyState !== 1) return;
+
+    // Twilio prefers small 20ms chunks (160 bytes for mu-law)
+    const CHUNK_SIZE = 160;
+    for (let i = 0; i < muLawAudio.length; i += CHUNK_SIZE) {
+        const chunk = muLawAudio.slice(i, i + CHUNK_SIZE);
+        const message = {
+            event: 'media',
+            streamSid: streamSid,
+            media: {
+                payload: chunk.toString('base64'),
+            },
+        };
+        ws.send(JSON.stringify(message));
+    }
 }
 
 module.exports = {
