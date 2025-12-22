@@ -13,7 +13,18 @@ async function createCall({ to, twimlUrl }) {
     return call;
 }
 
+function sendMuLawToTwilio(ws, muLawAudio, streamSid) {
+    const message = {
+        event: 'media',
+        streamSid: streamSid,
+        media: {
+            payload: muLawAudio.toString('base64'),
+        },
+    };
+    ws.send(JSON.stringify(message));
+}
 
 module.exports = {
-    createCall
+    createCall,
+    sendMuLawToTwilio
 }

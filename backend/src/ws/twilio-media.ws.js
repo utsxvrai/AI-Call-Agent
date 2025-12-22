@@ -1,12 +1,16 @@
 const WebSocket = require('ws');
-const STTService = require('../services/stt.service');
-const { muLawDecode } = require('../utils/audio');
+const STTService = require('../services/stt-service');
+const { muLawDecode, pcm16ToMuLaw } = require('../utils/audio');
 const transcriptService = require('../services/transcript-service');
+const TTSService = require('../services/tts-service');
+const { sendMuLawToTwilio } = require('../services/twilio-service');
+
+const tts = new TTSService();
 
 function setupTwilioMediaWS(server) {
   const wss = new WebSocket.Server({
     server,
-    path: '/ws/twilio',
+    path: '/ws/media',
   });
 
   wss.on('connection', (ws) => {
@@ -14,12 +18,16 @@ function setupTwilioMediaWS(server) {
 
     let stt = null;
     let callSid = null;
+    let streamSid = null;
 
     ws.on('message', (msg) => {
       let data;
 
       try {
         data = JSON.parse(msg.toString());
+        if (data.event !== 'media') {
+          console.log(`📥 [${callSid || 'unknown'}] Twilio event: ${data.event}`);
+        }
       } catch (err) {
         console.error('❌ Invalid WS message:', err.message);
         return;
@@ -28,9 +36,29 @@ function setupTwilioMediaWS(server) {
       switch (data.event) {
         case 'start': {
           callSid = data.start.callSid;
-          console.log(`📞 Call started: ${callSid}`);
+          streamSid = data.start.streamSid;
+          console.log(`📞 Call started: ${callSid} (Stream: ${streamSid})`);
 
-          stt = new STTService(callSid);
+          const triggerAI = async (text) => {
+            const aiReply = await transcriptService.handleFinal({
+              callSid,
+              text: text,
+            });
+
+            if (!aiReply) return;
+
+            const pcmAudio = await tts.synthesize(aiReply);
+            if (!pcmAudio) return;
+
+            const muLawAudio = pcm16ToMuLaw(pcmAudio);
+            console.log(`📤 [${callSid}] Sending ${muLawAudio.length} bytes of mu-law audio to Twilio`);
+
+            sendMuLawToTwilio(ws, muLawAudio, streamSid);
+          };
+
+          stt = new STTService(callSid, triggerAI);
+          transcriptService.registerAiTrigger(callSid, triggerAI);
+
           stt.connect();
           break;
         }
@@ -39,32 +67,30 @@ function setupTwilioMediaWS(server) {
           if (!stt) return;
 
           const muLaw = Buffer.from(data.media.payload, 'base64');
-          const pcm = muLawDecode(muLaw);
+          
+          if (!ws.packetCount) ws.packetCount = 0;
+          ws.packetCount++;
+          if (ws.packetCount % 50 === 0) {
+            console.log(`📦 [${callSid}] Received 50 media packets (raw mu-law)`);
+          }
 
-          stt.sendAudio(pcm);
+          stt.sendAudio(muLaw);
           break;
         }
 
         case 'stop': {
           console.log(`📴 Call ended: ${callSid}`);
-
           stt?.close();
           transcriptService.cleanupConversation(callSid);
-
           stt = null;
           callSid = null;
           break;
         }
-
-        default:
-          // ignore keepalive / unknown events
-          break;
       }
     });
 
     ws.on('close', () => {
       console.log('🔴 Twilio media disconnected');
-
       stt?.close();
       if (callSid) {
         transcriptService.cleanupConversation(callSid);
