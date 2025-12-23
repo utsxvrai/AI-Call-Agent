@@ -37,6 +37,11 @@ async function handleFinal({ callSid, text }) {
     const aiReply = await llm.generateReply(text);
     console.log(`🤖 [${callSid}] AI:`, aiReply);
 
+    if (llm.status === "Interested") {
+      console.log(`📢 [${callSid}] ALERT: Seller is interested!`);
+      // Trigger email/slack alert here in the future
+    }
+
     processingStates.set(callSid, false); // Done thinking, but TTS might still be playing
     return aiReply;
   } catch (err) {
@@ -83,4 +88,5 @@ module.exports = {
   handleFinal,
   registerAiTrigger,
   cleanupConversation,
+  getConversation,
 };

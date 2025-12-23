@@ -31,7 +31,17 @@ function sendMuLawToTwilio(ws, muLawAudio, streamSid) {
     }
 }
 
+async function endCall(callSid) {
+    try {
+        await twilioClient.calls(callSid).update({ status: 'completed' });
+        console.log(`📴 [${callSid}] Call forced to end via API.`);
+    } catch (err) {
+        console.error("Error ending call:", err.message);
+    }
+}
+
 module.exports = {
     createCall,
-    sendMuLawToTwilio
+    sendMuLawToTwilio,
+    endCall
 }

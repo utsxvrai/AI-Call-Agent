@@ -48,12 +48,22 @@ function setupTwilioMediaWS(server) {
             if (!aiReply) return;
 
             const pcmAudio = await tts.synthesize(aiReply);
-            if (!pcmAudio) return;
+            if (pcmAudio) {
+              const muLawAudio = pcm16ToMuLaw(pcmAudio);
+              console.log(`📤 [${callSid}] Sending ${muLawAudio.length} bytes of mu-law audio to Twilio`);
+              sendMuLawToTwilio(ws, muLawAudio, streamSid);
+            }
 
-            const muLawAudio = pcm16ToMuLaw(pcmAudio);
-            console.log(`📤 [${callSid}] Sending ${muLawAudio.length} bytes of mu-law audio to Twilio`);
-
-            sendMuLawToTwilio(ws, muLawAudio, streamSid);
+            // If the agent said goodbye, wait for audio to play then hang up
+            const llm = transcriptService.getConversation(callSid);
+            if (llm.isFinished) {
+              console.log(`📴 [${callSid}] Status detected as: ${llm.status}. Ending call in 4s...`);
+              // 4-second delay allows the "Goodbye" TTS to play to the user
+              setTimeout(() => {
+                const { endCall } = require('../services/twilio-service');
+                endCall(callSid);
+              }, 4000);
+            }
           };
 
           stt = new STTService(callSid, triggerAI);
@@ -67,7 +77,7 @@ function setupTwilioMediaWS(server) {
           if (!stt) return;
 
           const muLaw = Buffer.from(data.media.payload, 'base64');
-          
+
           if (!ws.packetCount) ws.packetCount = 0;
           ws.packetCount++;
           if (ws.packetCount % 50 === 0) {
