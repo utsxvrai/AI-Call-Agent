@@ -1,5 +1,15 @@
 const LLMService = require("./llm-service");
 
+let io = null;
+
+function setIo(socketIo) {
+  io = socketIo;
+}
+
+function getIo() {
+  return io;
+}
+
 const conversations = new Map(); // callSid → LLMService
 const lastSpeechTimes = new Map(); // callSid → timestamp
 const bufferedTranscripts = new Map(); // callSid → string
@@ -24,22 +34,31 @@ function handlePartial({ callSid, text }) {
 }
 
 async function handleFinal({ callSid, text }) {
+  if (!text || text.trim().length === 0) return null;
   if (processingStates.get(callSid)) return null; // Already talking/thinking
   processingStates.set(callSid, true);
 
   lastSpeechTimes.set(callSid, Date.now());
   bufferedTranscripts.delete(callSid);
-  console.log(`✅ [${callSid}] STT Final:`, text);
-
   const llm = getConversation(callSid);
+
+  if (io && text !== "INIT_GREETING") {
+    console.log(`📤 Emitting User Transcript: ${text}`);
+    io.emit('transcript', { callSid, role: 'user', text });
+  }
 
   try {
     const aiReply = await llm.generateReply(text);
     console.log(`🤖 [${callSid}] AI:`, aiReply);
 
+    if (io) {
+      console.log(`📤 Emitting AI Reply: ${aiReply}`);
+      io.emit('transcript', { callSid, role: 'ai', text: aiReply });
+      io.emit('status', { callSid, status: llm.status, isFinished: llm.isFinished });
+    }
+
     if (llm.status === "Interested") {
       console.log(`📢 [${callSid}] ALERT: Seller is interested!`);
-      // Trigger email/slack alert here in the future
     }
 
     processingStates.set(callSid, false); // Done thinking, but TTS might still be playing
@@ -89,4 +108,6 @@ module.exports = {
   registerAiTrigger,
   cleanupConversation,
   getConversation,
+  setIo,
+  getIo,
 };

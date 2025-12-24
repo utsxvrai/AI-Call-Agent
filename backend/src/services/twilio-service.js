@@ -8,6 +8,9 @@ async function createCall({ to, twimlUrl }) {
         from: process.env.TWILIO_PHONE_NUMBER,
         url: twimlUrl,
         method: 'POST',
+        statusCallback: `${process.env.BASE_URL.startsWith('http') ? '' : 'https://'}${process.env.BASE_URL}/api/v1/call/status`,
+        statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
+        statusCallbackMethod: 'POST',
     });
 
     return call;

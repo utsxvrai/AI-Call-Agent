@@ -57,10 +57,12 @@ class STTService {
         return;
       }
 
-      const text = data.text || (data.transcript && data.transcript.text);
+      let text = '';
+      if (data.text !== undefined) text = data.text;
+      else if (data.transcript && data.transcript.text !== undefined) text = data.transcript.text;
 
       if (type === 'partialTranscript' || type === 'partial_transcript') {
-        if (!text) return;
+        if (!text || text.trim().length === 0) return;
         transcriptService.handlePartial({
           callSid: this.callSid,
           text,
@@ -68,6 +70,7 @@ class STTService {
       }
 
       if (type === 'committedTranscript' || type === 'final_transcript' || type === 'committed_transcript') {
+        if (!text || text.trim().length === 0) return;
         console.log(`🎤 [${this.callSid}] STT Final: ${text}`);
         this.onFinalTranscript(text);
       }

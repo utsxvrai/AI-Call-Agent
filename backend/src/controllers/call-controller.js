@@ -28,8 +28,27 @@ async function callTwiml(req,res){
     }
 }
 
+async function handleStatus(req, res) {
+    const { CallSid, CallStatus } = req.body || {};
+    
+    if (!CallSid) {
+        return res.sendStatus(200);
+    }
+
+    console.log(`📡 [${CallSid}] Twilio Status: ${CallStatus}`);
+
+    const transcriptService = require('../services/transcript-service');
+    const io = transcriptService.getIo();
+
+    if (io) {
+        io.emit('callStatus', { callSid: CallSid, status: CallStatus });
+    }
+
+    res.sendStatus(200);
+}
 
 module.exports = {
     startCall,
-    callTwiml
+    callTwiml,
+    handleStatus
 }

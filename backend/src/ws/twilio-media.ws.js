@@ -70,6 +70,7 @@ function setupTwilioMediaWS(server) {
           transcriptService.registerAiTrigger(callSid, triggerAI);
 
           stt.connect();
+          triggerAI("INIT_GREETING");
           break;
         }
 

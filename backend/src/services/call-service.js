@@ -14,10 +14,7 @@ async function startOutboundCall({to}) {
 async function getGreetingTwiML(){
     const {twiml} = require('twilio');
     const response = new twiml.VoiceResponse();
-    response.say(
-    { voice: 'alice', language: 'en-US' },
-    'Hello! Please start speaking after the beep.'
-  );
+  
 
   response.connect().stream({
     url: `wss://${process.env.BASE_URL.replace('https://', '')}/ws/media`

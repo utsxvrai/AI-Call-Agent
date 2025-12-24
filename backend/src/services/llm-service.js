@@ -7,17 +7,18 @@ class LLMService {
     this.callSid = callSid;
     this.isFinished = false;
     this.status = 'Unsure'; // Tracks: Interested, Not Interested, or Unsure
-    
+
     this.messages = [
       {
         role: 'system',
         content: `
 You are Utsav from Salesence. You are on a PHONE CALL.
 STRICT RULES:
-- Never exceed 20 words.
-- Use simple, punchy sentences. No bullet points or long lists.
-- If they are interested, do NOT explain everything. Just say: "That's great! Should I send the signup link to your email, or would you like a quick 5-minute demo first?"
-- One thought per turn. Do not "double-barrel" questions.
+- First turn: Greet them, briefly say why you called (Salesence branding), and ask if they are interested. This MUST be within 3-4 sentences.
+- If they are INTERESTED: Say "Great, we will connect you on your email address." and stop.
+- If they are NOT INTERESTED: Say "Thanks for talking with us." and stop.
+- Never exceed 20 words per response after the greeting.
+- Use simple, punchy sentences.
 - Speak like a human, not a brochure.
         `.trim(),
       },
@@ -25,13 +26,15 @@ STRICT RULES:
   }
 
   async classifyIntent(userText) {
+
+    if (!userText) return "GREETING";
     const classificationPrompt = `
       Analyze the seller's response: "${userText}"
-      Classify into ONE category:
-      - INTERESTED: Positive feedback, asking for links, asking about price, or agreeing to try it.
-      - NOT_INTERESTED: Explicit "No", "Stop calling", "I'm busy", or hanging up.
-      - UNSURE: Confused, neutral, or asking "Who is this?".
-      - GOODBYE: Closing the conversation.
+      Classify into ONE category based on the intent:
+      - INTERESTED: Positive feedback, agreement, "yes", "go ahead", "tell me more", or general curiosity.
+      - NOT_INTERESTED: Explicit "No", "not interested", "stop", "busy", "don't call", or "no thanks". Includes repeating "no" like "no, no".
+      - UNSURE: Confused, neutral, or if the language is not English and intent is unclear.
+      - GOODBYE: Hanging up, saying "bye", or "have a nice day".
 
       Return ONLY the category word.
     `;
@@ -39,11 +42,11 @@ STRICT RULES:
     try {
       const response = await gemini.generate([{ role: 'user', content: classificationPrompt }]);
       const intent = response.text.trim().toUpperCase();
-      
+
       // Update internal status
       if (intent.includes("INTERESTED") && !intent.includes("NOT")) this.status = "Interested";
       if (intent.includes("NOT_INTERESTED")) this.status = "Not Interested";
-      
+
       console.log(`🎯 [${this.callSid}] Classification: ${this.status}`);
       return intent;
     } catch (e) {
@@ -54,17 +57,28 @@ STRICT RULES:
   async generateReply(userText) {
     if (this.isFinished) return null;
 
+    // Special case for initial greeting (if userText is empty or it's the first call)
+    if (!userText || userText === "INIT_GREETING") {
+      const greetingPrompt = "Greet the user as Utsav from Salesence, explain you're calling about helping them sell more, and ask if they would be interested in hearing more. Keep it to 3-4 sentences max.";
+      this.messages.push({ role: 'user', content: greetingPrompt });
+      const response = await gemini.generate(this.messages);
+      const aiText = response.text.trim();
+      this.messages.push({ role: 'assistant', content: aiText });
+      return aiText;
+    }
+
     const intent = await this.classifyIntent(userText);
 
-    if (intent === "INTERESTED") {
-    // Force a short, specific closing question instead of a general generation
-    return "Awesome! I can get your first free analysis started right now. Is this the best email to send the results to?";
-  }
+
+    if (this.status === "Interested") {
+      this.isFinished = true;
+      return "Great, we will connect you on your email address. Have a wonderful day!";
+    }
 
     // Phase 8: Call Termination Logic
     if (this.status === "Not Interested" || intent.includes("GOODBYE")) {
       this.isFinished = true;
-      return "I understand. Thanks for your time! Check us out at gosalesence.com if you change your mind. Have a great day!";
+      return "Thanks for talking with us. Have a great day!";
     }
 
     this.messages.push({ role: 'user', content: userText });
