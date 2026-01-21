@@ -51,12 +51,14 @@ An intelligent voice AI system that makes outbound calls, listens to responses, 
 ### Required API Keys
 
 1. **Twilio**
+
    - Account SID
    - Auth Token
    - Verified phone number
    - Sign up: https://www.twilio.com
 
 2. **Google Gemini**
+
    - API Key for generative AI
    - Sign up: https://ai.google.dev
 
@@ -119,6 +121,7 @@ npm run dev
 ```
 
 Output:
+
 ```
 Server running on port 3000
 ✅ Health check ready at http://localhost:3000/health
@@ -206,34 +209,37 @@ AI Call Agent/
 
 ## 🔧 Technology Stack
 
-| Layer | Technology | Purpose |
-|-------|-----------|---------|
-| **Frontend** | React 19 | User interface |
-| **Frontend Build** | Vite | Fast module bundler |
-| **Styling** | Tailwind CSS | Utility-first CSS |
-| **Icons** | Lucide React | Icon library |
-| **Backend** | Express.js | Web framework |
-| **Runtime** | Node.js | JavaScript runtime |
-| **Real-time** | Socket.IO | WebSocket communication |
-| **HTTP Client** | Axios | API requests |
-| **Voice Calls** | Twilio | VoIP platform |
-| **Speech-to-Text** | Web Audio API | Browser-based STT |
-| **Text-to-Speech** | ElevenLabs API | AI voice synthesis |
-| **AI/LLM** | Google Gemini | Intent classification |
-| **Environment** | dotenv | Config management |
-| **Dev Tools** | Nodemon | Auto-reload server |
+| Layer              | Technology     | Purpose                 |
+| ------------------ | -------------- | ----------------------- |
+| **Frontend**       | React 19       | User interface          |
+| **Frontend Build** | Vite           | Fast module bundler     |
+| **Styling**        | Tailwind CSS   | Utility-first CSS       |
+| **Icons**          | Lucide React   | Icon library            |
+| **Backend**        | Express.js     | Web framework           |
+| **Runtime**        | Node.js        | JavaScript runtime      |
+| **Real-time**      | Socket.IO      | WebSocket communication |
+| **HTTP Client**    | Axios          | API requests            |
+| **Voice Calls**    | Twilio         | VoIP platform           |
+| **Speech-to-Text** | Web Audio API  | Browser-based STT       |
+| **Text-to-Speech** | ElevenLabs API | AI voice synthesis      |
+| **AI/LLM**         | Google Gemini  | Intent classification   |
+| **Environment**    | dotenv         | Config management       |
+| **Dev Tools**      | Nodemon        | Auto-reload server      |
 
 ## 📡 API Endpoints
 
 ### Call Management
+
 - `POST /api/v1/call/start` - Initiate an outbound call
 - `POST /api/v1/call/twiml` - Generate TwiML for call handling
 - `POST /api/v1/call/status` - Receive call status updates
 
 ### Health Check
+
 - `GET /health` - Server health status
 
 ### WebSocket Events
+
 - `/ws/media` - Real-time audio streaming with Twilio
 
 ## 🎯 Call Flow
@@ -273,6 +279,7 @@ Idle → Initiated → Ringing → Answered → In Progress → Completed
 ## 📊 Sentiment Classification
 
 The AI classifies caller intent into:
+
 - ✅ **Interested** - Positive response, willing to continue
 - ❌ **Not Interested** - Explicit rejection or disengagement
 - ❓ **Unsure** - Neutral or unclear intent
@@ -282,18 +289,21 @@ The AI classifies caller intent into:
 ### Start Development Servers
 
 **Terminal 1 - Backend:**
+
 ```bash
 cd backend
 npm run dev
 ```
 
 **Terminal 2 - Frontend:**
+
 ```bash
 cd frontend
 npm run dev
 ```
 
 **Terminal 3 - ngrok (for webhooks):**
+
 ```bash
 ngrok http 3000
 ```
@@ -301,13 +311,16 @@ ngrok http 3000
 ### Build for Production
 
 **Frontend:**
+
 ```bash
 cd frontend
 npm run build
 ```
+
 Output in `frontend/dist/`
 
 **Backend:**
+
 ```bash
 cd backend
 npm start  # (ensure "start" script is in package.json)
@@ -323,33 +336,37 @@ npm start  # (ensure "start" script is in package.json)
 ## 🐛 Troubleshooting
 
 ### ngrok URL keeps changing
+
 - Use ngrok's free tier token for stability: `ngrok config add-authtoken <token>`
 
 ### Twilio call fails
+
 - Verify phone number is in E.164 format: `+1234567890`
 - Check account balance and active phone number
 
 ### No audio received
+
 - Ensure WebSocket connection is established
 - Check browser console for connection errors
 - Verify `BASE_URL` matches ngrok URL
 
 ### "No such voice ID" error
+
 - Verify `ELEVENLABS_VOICE_ID` is correct
 - List available voices at: https://api.elevenlabs.io/v1/voices
 
 ## 📝 Environment Variables Reference
 
-| Variable | Example | Description |
-|----------|---------|-------------|
-| `TWILIO_ACCOUNT_SID` | `AC6cb1c94...` | Twilio account identifier |
-| `TWILIO_AUTH_TOKEN` | `dad3c76cc373...` | Twilio authentication |
-| `TWILIO_PHONE_NUMBER` | `+15107382629` | Your Twilio phone number |
-| `GEMINI_API_KEY` | `AIzaSyDGqK5X...` | Google Gemini API key |
-| `ELEVENLABS_API_KEY` | `sk_25d16d97...` | ElevenLabs API key |
-| `ELEVENLABS_VOICE_ID` | `pLaNsQLq7c...` | ElevenLabs voice character |
-| `BASE_URL` | `https://xxx.ngrok-free.dev` | Public webhook URL |
-| `PORT` | `3000` | Backend server port |
+| Variable              | Example                      | Description                |
+| --------------------- | ---------------------------- | -------------------------- |
+| `TWILIO_ACCOUNT_SID`  | `AC6cb1c94...`               | Twilio account identifier  |
+| `TWILIO_AUTH_TOKEN`   | `dad3c76cc373...`            | Twilio authentication      |
+| `TWILIO_PHONE_NUMBER` | `+15107382629`               | Your Twilio phone number   |
+| `GEMINI_API_KEY`      | `AIzaSyDGqK5X...`            | Google Gemini API key      |
+| `ELEVENLABS_API_KEY`  | `sk_25d16d97...`             | ElevenLabs API key         |
+| `ELEVENLABS_VOICE_ID` | `pLaNsQLq7c...`              | ElevenLabs voice character |
+| `BASE_URL`            | `https://xxx.ngrok-free.dev` | Public webhook URL         |
+| `PORT`                | `3000`                       | Backend server port        |
 
 ## 📞 Support & Resources
 

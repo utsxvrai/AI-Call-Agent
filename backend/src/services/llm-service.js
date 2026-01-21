@@ -1,4 +1,5 @@
-const gemini = require('../config/gemini');
+// const gemini = require('../config/gemini');
+const openrouter = require('../config/openrouter');
 
 const MAX_RESPONSE_WORDS = 30;
 
@@ -40,7 +41,8 @@ STRICT RULES:
     `;
 
     try {
-      const response = await gemini.generate([{ role: 'user', content: classificationPrompt }]);
+      // const response = await gemini.generate([{ role: 'user', content: classificationPrompt }]);
+      const response = await openrouter.generate([{ role: 'user', content: classificationPrompt }]);
       const intent = response.text.trim().toUpperCase();
 
       // Update internal status
@@ -61,7 +63,8 @@ STRICT RULES:
     if (!userText || userText === "INIT_GREETING") {
       const greetingPrompt = "Greet the user as Utsav from Salesence, explain you're calling about helping them sell more, and ask if they would be interested in hearing more. Keep it to 3-4 sentences max.";
       this.messages.push({ role: 'user', content: greetingPrompt });
-      const response = await gemini.generate(this.messages);
+      // const response = await gemini.generate(this.messages);
+      const response = await openrouter.generate(this.messages);
       const aiText = response.text.trim();
       this.messages.push({ role: 'assistant', content: aiText });
       return aiText;
@@ -82,7 +85,8 @@ STRICT RULES:
     }
 
     this.messages.push({ role: 'user', content: userText });
-    const response = await gemini.generate(this.messages);
+    // const response = await gemini.generate(this.messages);
+    const response = await openrouter.generate(this.messages);
     const aiText = response.text.trim();
 
     this.messages.push({ role: 'assistant', content: aiText });
