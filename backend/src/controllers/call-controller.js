@@ -1,16 +1,22 @@
 const { CallService } = require("../services");
 
-async function startCall(req,res){
-    try{
-        const { to } = req.body;
-        const call = await CallService.startOutboundCall({to});
+async function startCall(req, res) {
+    try {
+        const { to, leadId } = req.body;
+        const call = await CallService.startOutboundCall({ to });
+        
+        if (leadId) {
+            const transcriptService = require('../services/transcript-service');
+            transcriptService.registerLeadMapping(call.sid, leadId);
+        }
+
         res.json({
             success: true,
             callSid: call.sid,
             status: call.status,
         });
     }
-    catch(error){
+    catch (error) {
         console.error(error);
         res.status(500).json({ error: 'Failed to start call' });
     }

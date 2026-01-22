@@ -15,6 +15,8 @@ const lastSpeechTimes = new Map(); // callSid → timestamp
 const bufferedTranscripts = new Map(); // callSid → string
 const aiTriggerCallbacks = new Map(); // callSid → function
 const processingStates = new Map(); // callSid → boolean
+const leadMappings = new Map(); // callSid → leadId
+const supabase = require('../config/supabase');
 
 function getConversation(callSid) {
   if (!conversations.has(callSid)) {
@@ -61,6 +63,21 @@ async function handleFinal({ callSid, text }) {
       console.log(`📢 [${callSid}] ALERT: Seller is interested!`);
     }
 
+    // Update Supabase if call is finished
+    if (llm.isFinished) {
+      const leadId = leadMappings.get(callSid);
+      if (leadId) {
+        console.log(`💾 [${callSid}] Updating Supabase for lead ${leadId}: status=called, interested=${llm.status === 'Interested'}`);
+        await supabase
+          .from('leads')
+          .update({ 
+            status: 'called', 
+            is_interested: llm.status === 'Interested' 
+          })
+          .eq('id', leadId);
+      }
+    }
+
     processingStates.set(callSid, false); // Done thinking, but TTS might still be playing
     return aiReply;
   } catch (err) {
@@ -100,6 +117,11 @@ function cleanupConversation(callSid) {
   bufferedTranscripts.delete(callSid);
   aiTriggerCallbacks.delete(callSid);
   processingStates.delete(callSid);
+  leadMappings.delete(callSid);
+}
+
+function registerLeadMapping(callSid, leadId) {
+  leadMappings.set(callSid, leadId);
 }
 
 module.exports = {
@@ -108,6 +130,7 @@ module.exports = {
   registerAiTrigger,
   cleanupConversation,
   getConversation,
+  registerLeadMapping,
   setIo,
   getIo,
 };

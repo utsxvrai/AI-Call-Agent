@@ -20,16 +20,26 @@ async function generate(messages) {
         headers: {
           'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
           'Content-Type': 'application/json',
-          'HTTP-Referer': 'https://github.com/OpenRouterTeam/openrouter-runner', // Optional, for OpenRouter rankings
-          'X-Title': 'AI Call Agent', // Optional, for OpenRouter rankings
+          'HTTP-Referer': 'https://github.com/OpenRouterTeam/openrouter-runner',
+          'X-Title': 'AI Call Agent',
         },
+        timeout: 10000, // 10s timeout
       }
     );
+
+    if (!response.data || !response.data.choices || response.data.choices.length === 0) {
+      console.error('❌ OpenRouter unexpected response format:', JSON.stringify(response.data));
+      throw new Error('Invalid response format from OpenRouter');
+    }
 
     const aiText = response.data.choices[0].message.content;
     return { text: aiText };
   } catch (error) {
-    console.error('❌ OpenRouter Error:', error.response ? error.response.data : error.message);
+    if (error.response) {
+      console.error('❌ OpenRouter API Error:', error.response.status, JSON.stringify(error.response.data));
+    } else {
+      console.error('❌ OpenRouter Request Error:', error.message);
+    }
     throw error;
   }
 }
