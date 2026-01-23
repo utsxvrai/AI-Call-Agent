@@ -3,32 +3,14 @@ require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const routes = require('./routes');
-const  setupTwilioMediaWebSocket  = require('./ws/twilio-media.ws');
-
-
+const setupOutboundMediaWS = require('./ws/outbound-media.ws');
 
 const app = express();
 const server = http.createServer(app);
 const cors = require('cors');
-const { Server } = require('socket.io');
 
-const io = new Server(server, {
-  cors: {
-    origin: "*", 
-    methods: ["GET", "POST"],
-    credentials: true
-  },
-  allowEIO3: true,
-  perMessageDeflate: false
-});
-
-// Pass io to transcript service
-const transcriptService = require('./services/transcript-service');
-transcriptService.setIo(io);
-
-setupTwilioMediaWebSocket(server);
-
-const PORT = process.env.PORT || 3000;
+// Setup Twilio WebSocket handlers
+setupOutboundMediaWS(server);
 
 // Middleware
 app.use(cors());
@@ -47,9 +29,11 @@ app.get('/health', (req, res) => {
 // Routes
 app.use('/api', routes);
 
+const PORT = process.env.PORT;
+
 // Start server
 server.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
 });
 
-module.exports = { io };
+

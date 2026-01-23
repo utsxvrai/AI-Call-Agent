@@ -1,3 +1,3 @@
 module.exports = {
-    CallController : require('./call-controller')
+    OutboundController: require('./outbound-controller')
 }

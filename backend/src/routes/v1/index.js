@@ -1,11 +1,9 @@
 const express = require('express');
-const callRoutes = require('./call-route');
-const leadRoutes = require('./lead-route');
+const outboundRoutes = require('./outbound-route');
 
 const router = express.Router();
 
-router.use('/call', callRoutes);
-router.use('/leads', leadRoutes);
+router.use('/outbound', outboundRoutes);
 
 module.exports = router;
 

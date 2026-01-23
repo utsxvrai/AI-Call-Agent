@@ -11,15 +11,10 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@google/generative-ai": "^0.24.1",
-    "@supabase/supabase-js": "^2.91.0",
-    "axios": "^1.13.2",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
-    "socket.io": "^4.8.1",
     "twilio": "^5.11.1",
-    "uuid": "^13.0.0",
     "ws": "^8.18.3"
   },
   "devDependencies": {

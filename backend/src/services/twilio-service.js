@@ -1,50 +1,25 @@
-const twilioClient = require('../config/twilio');
-const dotenv = require('dotenv');
-dotenv.config();
+const twilio = require('twilio');
+require('dotenv').config();
 
-async function createCall({ to, twimlUrl }) {
-    const call = await twilioClient.calls.create({
-        to,
-        from: process.env.TWILIO_PHONE_NUMBER,
-        url: twimlUrl,
-        method: 'POST',
-        statusCallback: `${process.env.BASE_URL.startsWith('http') ? '' : 'https://'}${process.env.BASE_URL}/api/v1/call/status`,
-        statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
-        statusCallbackMethod: 'POST',
-    });
+const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN } = process.env;
+const twilioClient = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
 
-    return call;
-}
-
-function sendMuLawToTwilio(ws, muLawAudio, streamSid) {
-    if (!ws || ws.readyState !== 1) return;
-
-    // Twilio prefers small 20ms chunks (160 bytes for mu-law)
-    const CHUNK_SIZE = 160;
-    for (let i = 0; i < muLawAudio.length; i += CHUNK_SIZE) {
-        const chunk = muLawAudio.slice(i, i + CHUNK_SIZE);
-        const message = {
-            event: 'media',
-            streamSid: streamSid,
-            media: {
-                payload: chunk.toString('base64'),
-            },
-        };
-        ws.send(JSON.stringify(message));
+const TwilioService = {
+  async endCall(callSid) {
+    if (!callSid || callSid === 'unknown') {
+      console.warn("⚠️ Attempted to end call with invalid CallSid");
+      return;
     }
-}
 
-async function endCall(callSid) {
     try {
-        await twilioClient.calls(callSid).update({ status: 'completed' });
-        console.log(`📴 [${callSid}] Call forced to end via API.`);
-    } catch (err) {
-        console.error("Error ending call:", err.message);
+      await twilioClient.calls(callSid).update({ status: 'completed' });
+      console.log(`✅ [${callSid}] Call terminated successfully.`);
+      return true;
+    } catch (error) {
+      console.error(`❌ [${callSid}] Failed to terminate call:`, error.message);
+      return false;
     }
-}
+  }
+};
 
-module.exports = {
-    createCall,
-    sendMuLawToTwilio,
-    endCall
-}
+module.exports = TwilioService;
