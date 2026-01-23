@@ -2,27 +2,39 @@ const TwilioService = require('../services/twilio-service');
 
 const OutboundController = {
   async initiateCall(req, res) {
-    const { firstMessage, number } = req.body;
+    const { number, leadId } = req.body;
     const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER } = process.env;
-    
+
     if (!number) {
-        return res.status(400).json({ error: 'Number is required' });
+      return res.status(400).json({ error: 'Number is required' });
     }
 
     const twilio = require('twilio');
     const twilioClient = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
 
-    console.log("[CALL] Initiating outbound call to:", number);
+    console.log("[CALL] Initiating outbound call to:", number, "LeadId:", leadId);
 
     try {
       const baseUrl = process.env.BASE_URL ? process.env.BASE_URL.replace(/\/$/, "") : `https://${req.headers.host}`;
-      
+
       const call = await twilioClient.calls.create({
         from: TWILIO_PHONE_NUMBER,
         to: number,
-        url: `${baseUrl}/api/v1/outbound/outgoing-call-twiml?firstMessage=${encodeURIComponent(firstMessage || '')}`
+        url: `${baseUrl}/api/v1/outbound/outgoing-call-twiml?leadId=${leadId || ''}`,
+        statusCallback: `${baseUrl}/api/v1/outbound/status-callback${leadId ? `?leadId=${leadId}` : ''}`,
+        statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
+        statusCallbackMethod: 'POST'
       });
-      
+
+      // NEW: Store the Call SID in Supabase for reliable lead identification
+      if (leadId) {
+        const supabase = require('../services/supabase-service');
+        await supabase
+          .from('leads')
+          .update({ twilio_call_sid: call.sid })
+          .eq('id', leadId);
+      }
+
       console.log("[CALL] Call initiated successfully:", call.sid);
       res.json({ message: 'Call initiated', callSid: call.sid });
     } catch (error) {
@@ -31,38 +43,62 @@ const OutboundController = {
     }
   },
 
+  async handleStatusCallback(req, res) {
+    const { CallStatus, CallSid } = req.body;
+    const leadId = req.query.leadId;
+
+    console.log(`[CALLBACK] CallSid: ${CallSid}, LeadId: ${leadId}, Status: ${CallStatus}`);
+
+    if (leadId) {
+      const supabase = require('../services/supabase-service');
+      
+      // Map Twilio statuses to your application statuses
+      let appStatus = 'pending';
+      if (CallStatus === 'in-progress' || CallStatus === 'answered') appStatus = 'calling';
+      if (['completed', 'busy', 'no-answer', 'canceled', 'failed'].includes(CallStatus)) appStatus = 'called';
+
+      await supabase
+        .from('leads')
+        .update({ call_status: appStatus })
+        .eq('id', leadId);
+    }
+
+    res.sendStatus(200);
+  },
+
   async generateTwiML(req, res) {
     try {
-        const data = req.method === 'POST' ? req.body : req.query;
-        const callSid = data.CallSid || "unknown";
-        const firstMessage = req.query.firstMessage || "";
+      const data = req.method === 'POST' ? req.body : req.query;
+      const callSid = data.CallSid || "unknown";
+      // ALWAYS use query for leadId as we specifically passed it in the URL
+      const leadId = req.query.leadId || "";
 
-        console.log(`[TWIML] Generating TwiML. Method: ${req.method}, CallSid: ${callSid}`);
+      console.log(`[TWIML] Generating TwiML. CallSid: ${callSid}, LeadId: ${leadId}`);
 
-        const baseUrl = process.env.BASE_URL;
-        let wsHost;
-        if (baseUrl) {
-            try {
-                wsHost = new URL(baseUrl).host;
-            } catch (e) {
-                wsHost = req.headers.host;
-            }
-        } else {
-            wsHost = req.headers.host;
+      const baseUrl = process.env.BASE_URL;
+      let wsHost;
+      if (baseUrl) {
+        try {
+          wsHost = new URL(baseUrl).host;
+        } catch (e) {
+          wsHost = req.headers.host;
         }
+      } else {
+        wsHost = req.headers.host;
+      }
 
-        const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
+      const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Connect>
-    <Stream url="wss://${wsHost}/outbound-media-stream?firstMessage=${encodeURIComponent(firstMessage)}&amp;callSid=${callSid}" />
+    <Stream url="wss://${wsHost}/outbound-media-stream?callSid=${callSid}&amp;leadId=${leadId}" />
   </Connect>
   <Pause length="40" />
 </Response>`.trim();
 
-        res.type("text/xml").send(twimlResponse);
+      res.type("text/xml").send(twimlResponse);
     } catch (error) {
-        console.error("❌ TwiML Error:", error.message);
-        res.status(500).send("Error generating TwiML");
+      console.error("❌ TwiML Error:", error.message);
+      res.status(500).send("Error generating TwiML");
     }
   },
 

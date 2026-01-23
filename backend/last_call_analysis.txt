@@ -1,0 +1,63 @@
+{
+  "evaluation_criteria_results": {},
+  "data_collection_results": {
+    "user_interest": {
+      "data_collection_id": "user_interest",
+      "value": true,
+      "json_schema": {
+        "type": "boolean",
+        "description": "Set to true if the user agrees to receive the WhatsApp trial link or shows clear interest in trying Salesence. Otherwise, set to false.",
+        "enum": null,
+        "is_system_provided": false,
+        "dynamic_variable": "",
+        "constant_value": ""
+      },
+      "rationale": "The user explicitly asks for the link to be sent, indicating a clear interest in trying Salesence. Therefore, the value is set to true."
+    },
+    "end_call_goal": {
+      "data_collection_id": "end_call_goal",
+      "value": true,
+      "json_schema": {
+        "type": "boolean",
+        "description": "Set to true if the user explicitly agrees to receive a WhatsApp link for a trial. If they say 'Yes', 'Sure', or 'Send it', mark as true. If they say 'No' or are not interested, mark as false.",
+        "enum": null,
+        "is_system_provided": false,
+        "dynamic_variable": "",
+        "constant_value": ""
+      },
+      "rationale": "The user explicitly asks to receive the link by saying 'Please send me the link'. Therefore, the user agrees to receive a WhatsApp link for a trial."
+    }
+  },
+  "evaluation_criteria_results_list": [],
+  "data_collection_results_list": [
+    {
+      "data_collection_id": "user_interest",
+      "value": true,
+      "json_schema": {
+        "type": "boolean",
+        "description": "Set to true if the user agrees to receive the WhatsApp trial link or shows clear interest in trying Salesence. Otherwise, set to false.",
+        "enum": null,
+        "is_system_provided": false,
+        "dynamic_variable": "",
+        "constant_value": ""
+      },
+      "rationale": "The user explicitly asks for the link to be sent, indicating a clear interest in trying Salesence. Therefore, the value is set to true."
+    },
+    {
+      "data_collection_id": "end_call_goal",
+      "value": true,
+      "json_schema": {
+        "type": "boolean",
+        "description": "Set to true if the user explicitly agrees to receive a WhatsApp link for a trial. If they say 'Yes', 'Sure', or 'Send it', mark as true. If they say 'No' or are not interested, mark as false.",
+        "enum": null,
+        "is_system_provided": false,
+        "dynamic_variable": "",
+        "constant_value": ""
+      },
+      "rationale": "The user explicitly asks to receive the link by saying 'Please send me the link'. Therefore, the user agrees to receive a WhatsApp link for a trial."
+    }
+  ],
+  "call_successful": "success",
+  "transcript_summary": "Salesence agent offered a free 1-product trial via WhatsApp link to the user, who requested the link due to having a customer. The agent followed up to confirm.\n",
+  "call_summary_title": "Send WhatsApp trial link"
+}

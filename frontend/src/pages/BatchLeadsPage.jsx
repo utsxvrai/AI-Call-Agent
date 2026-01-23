@@ -31,7 +31,7 @@ export default function BatchLeadsPage() {
 
   const stats = {
     total: leads.length,
-    called: leads.filter(l => l.status === 'called').length,
+    called: leads.filter(l => l.call_status === 'called').length,
     interested: leads.filter(l => l.is_interested).length
   };
 

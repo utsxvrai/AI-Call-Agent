@@ -26,7 +26,7 @@ export default function AutoDialerPage() {
     try {
       const response = await axios.get(`${API_BASE_URL}/leads?batch_id=${batchId}`);
       // Filter only pending leads for the auto-dialer
-      const pendingLeads = response.data.filter(l => l.status === 'pending');
+      const pendingLeads = response.data.filter(l => l.call_status === 'pending');
       setLeads(pendingLeads);
     } catch (error) {
       console.error('Failed to fetch leads:', error);
@@ -96,8 +96,8 @@ export default function AutoDialerPage() {
     setCallStatus('DIALING');
 
     try {
-      await axios.post(`${API_BASE_URL}/call/start`, { 
-        to: lead.number,
+      await axios.post(`${API_BASE_URL}/outbound/outgoing-call`, { 
+        number: lead.number,
         leadId: lead.id 
       });
     } catch (error) {

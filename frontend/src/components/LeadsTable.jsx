@@ -68,28 +68,28 @@ export default function LeadsTable({ leads, onSelectLead, isLoading }) {
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex flex-col items-center gap-1">
-                      {getStatusIcon(lead.status, lead.is_interested)}
+                      {getStatusIcon(lead.call_status, lead.is_interested)}
                       <span className={`text-[10px] font-bold uppercase tracking-tighter ${
-                        lead.status === 'called' 
+                        lead.call_status === 'called' 
                           ? (lead.is_interested ? 'text-green-500' : 'text-red-500')
                           : 'text-slate-500'
                       }`}>
-                        {getStatusText(lead.status, lead.is_interested)}
+                        {getStatusText(lead.call_status, lead.is_interested)}
                       </span>
                     </div>
                   </td>
                   <td className="px-6 py-4 text-right">
                     <button
                       onClick={() => onSelectLead(lead)}
-                      disabled={lead.status === 'called'}
+                      disabled={lead.call_status === 'called'}
                       className={`px-4 py-2 rounded-xl text-xs font-black flex items-center gap-2 ml-auto transition-all ${
-                        lead.status === 'called'
+                        lead.call_status === 'called'
                           ? 'bg-slate-800 text-slate-600 cursor-not-allowed'
                           : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg'
                       }`}
                     >
                       <Phone size={14} />
-                      {lead.status === 'called' ? 'RE-CALL' : 'CALL'}
+                      {lead.call_status === 'called' ? 'RE-CALL' : 'CALL'}
                     </button>
                   </td>
                 </tr>
