@@ -1,2 +1,6 @@
 node_modules
 .env
+
+
+last_call_analysis.txt
+elevenlabs_ws.log

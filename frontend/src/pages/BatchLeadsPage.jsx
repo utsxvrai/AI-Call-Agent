@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Phone, Play, User, Hash, MessageSquare, Clock, Filter, ListFilter } from 'lucide-react';
+import { ArrowLeft, Phone, Play, User, Hash, MessageSquare, Clock, Filter, ListFilter, Trash2 } from 'lucide-react';
 import LeadsTable from '../components/LeadsTable';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api/v1';
@@ -29,6 +29,20 @@ export default function BatchLeadsPage() {
     fetchLeads();
   }, [batchId]);
 
+  const handleDeleteBatch = async () => {
+    if (!window.confirm("Are you sure you want to delete this campaign? All lead data will be lost.")) {
+      return;
+    }
+
+    try {
+      await axios.delete(`${API_BASE_URL}/leads/batch/${batchId}`);
+      navigate('/dashboard');
+    } catch (error) {
+      console.error('Failed to delete batch:', error);
+      alert('Failed to delete batch');
+    }
+  };
+
   const stats = {
     total: leads.length,
     called: leads.filter(l => l.call_status === 'called').length,
@@ -40,7 +54,7 @@ export default function BatchLeadsPage() {
       <div className="max-w-6xl mx-auto">
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-12 gap-6">
           <div className="flex items-center gap-6">
-            <button 
+            <button
               onClick={() => navigate('/dashboard')}
               className="p-4 bg-slate-900 rounded-2xl hover:bg-slate-800 transition-colors text-slate-400"
             >
@@ -51,15 +65,24 @@ export default function BatchLeadsPage() {
               <h1 className="text-3xl font-black text-white">ID: {batchId.slice(0, 8)}</h1>
             </div>
           </div>
-          
-          <button 
-            onClick={() => navigate(`/agent/${batchId}`)}
-            disabled={leads.length === 0}
-            className="group flex items-center gap-4 bg-white text-black px-8 py-4 rounded-2xl font-black text-lg transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:grayscale"
-          >
-            <Play size={24} className="fill-current" />
-            START AI AGENT
-          </button>
+
+          <div className="flex gap-4">
+            <button
+              onClick={handleDeleteBatch}
+              className="group flex items-center gap-4 bg-red-500/10 hover:bg-red-500/20 text-red-500 px-6 py-4 rounded-2xl font-black text-lg transition-all"
+              title="Delete Campaign"
+            >
+              <Trash2 size={24} />
+            </button>
+            <button
+              onClick={() => navigate(`/agent/${batchId}`)}
+              disabled={leads.length === 0}
+              className="group flex items-center gap-4 bg-white text-black px-8 py-4 rounded-2xl font-black text-lg transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:grayscale"
+            >
+              <Play size={24} className="fill-current" />
+              START AI AGENT
+            </button>
+          </div>
         </header>
 
         {/* Stats Grid */}
@@ -91,16 +114,16 @@ export default function BatchLeadsPage() {
               <span className="px-3 py-1 bg-white/5 rounded-full text-[10px] font-bold text-slate-500 uppercase">Sort by Date</span>
             </div>
           </div>
-          
+
           <div className="max-h-[600px] overflow-y-auto custom-scrollbar">
-            <LeadsTable 
-              leads={leads} 
+            <LeadsTable
+              leads={leads}
               onSelectLead={(lead) => {
                 // For individual calls, we could still support the old modal or 
                 // just navigate to a single-dialer mode
                 console.log('Selected lead:', lead);
-              }} 
-              isLoading={isLoading} 
+              }}
+              isLoading={isLoading}
             />
           </div>
         </div>

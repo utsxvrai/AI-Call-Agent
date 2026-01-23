@@ -21,6 +21,12 @@ export default function AutoDialerPage() {
   
   const timerRef = useRef(null);
   const scrollRef = useRef(null);
+  const leadsRef = useRef([]);
+  const currentIndexRef = useRef(0);
+
+  // Keep refs in sync with state for use in closures (socket listeners/timeouts)
+  useEffect(() => { leadsRef.current = leads; }, [leads]);
+  useEffect(() => { currentIndexRef.current = currentIndex; }, [currentIndex]);
 
   const fetchLeads = async () => {
     try {
@@ -35,28 +41,64 @@ export default function AutoDialerPage() {
 
   useEffect(() => {
     fetchLeads();
-    const newSocket = io(SOCKET_URL);
+    const newSocket = io(SOCKET_URL, {
+      transports: ['websocket'],
+      upgrade: false
+    });
     setSocket(newSocket);
 
     newSocket.on('transcript', (data) => {
+      console.log('📝 Transcription:', data.text);
       setTranscript(prev => [...prev, data]);
+      // Safety: if we get a transcript, the call is definitely active
+      setCallStatus(prev => {
+        if (prev !== 'ACTIVE') {
+          console.log('🛡️ Safety Trigger: Switching to ACTIVE via transcription');
+          return 'ACTIVE';
+        }
+        return prev;
+      });
     });
 
     newSocket.on('status', (data) => {
+      console.log('🎯 Lead Evaluation:', data.status);
       if (data.status === 'Interested') setLeadStatus('Interested');
       else if (data.status === 'Not Interested') setLeadStatus('Not Interested');
     });
 
     newSocket.on('callStatus', (data) => {
       const s = data.status.toLowerCase();
-      if (s === 'answered') {
+      console.log('📡 Twilio Call Status:', s);
+      if (s === 'answered' || s === 'in-progress') {
+        console.log('✅ Call Answered/Active');
         setCallStatus('ACTIVE');
         startTimer();
       } else if (['completed', 'busy', 'no-answer', 'failed', 'canceled'].includes(s)) {
+        console.log('🛑 Call Terminated');
         handleCallEnd();
       } else if (s === 'ringing') {
+        console.log('🔔 Call Ringing...');
         setCallStatus('DIALING');
       }
+    });
+
+    // New Signal Listener
+    newSocket.on('syncComplete', (data) => {
+      console.log('🏁 Sync Signal Received from Backend for lead:', data.leadId);
+      
+      setCallStatus(prev => {
+        const lds = leadsRef.current;
+        const idx = currentIndexRef.current;
+
+        if (idx + 1 < lds.length) {
+          console.log('🔄 Preparing next lead.');
+          setCurrentIndex(prevIdx => prevIdx + 1);
+          return 'COOLDOWN';
+        } else {
+          console.log('🎊 All pending leads processed.');
+          return 'CAMPAIGN_COMPLETE';
+        }
+      });
     });
 
     return () => {
@@ -73,6 +115,7 @@ export default function AutoDialerPage() {
 
   const startTimer = () => {
     if (timerRef.current) return;
+    console.log('⏱️ Timer: START');
     setCallDuration(0);
     timerRef.current = setInterval(() => {
       setCallDuration(prev => prev + 1);
@@ -81,14 +124,24 @@ export default function AutoDialerPage() {
 
   const stopTimer = () => {
     if (timerRef.current) {
+      console.log('⏱️ Timer: STOP');
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
   };
 
   const startCall = async () => {
-    if (currentIndex >= leads.length) return;
-    const lead = leads[currentIndex];
+    const lds = leadsRef.current;
+    const idx = currentIndexRef.current;
+
+    if (idx >= lds.length) {
+      console.log('⚠️ No more pending leads to call.');
+      setCallStatus('CAMPAIGN_COMPLETE');
+      return;
+    }
+    
+    const lead = lds[idx];
+    console.log(`📞 Dialing: ${lead.name} (${idx + 1}/${lds.length})`);
     
     setTranscript([]);
     setCallDuration(0);
@@ -102,26 +155,31 @@ export default function AutoDialerPage() {
       });
     } catch (error) {
       console.error('Call failed to start:', error);
-      setCallStatus('IDLE');
+      // Skip to next lead
+      if (idx + 1 < lds.length) {
+        setCurrentIndex(prev => prev + 1);
+        setCallStatus('COOLDOWN');
+      } else {
+        setCallStatus('CAMPAIGN_COMPLETE');
+      }
     }
   };
 
   const handleCallEnd = () => {
+    if (callStatus === 'COMPLETED' || callStatus === 'COOLDOWN' || callStatus === 'CAMPAIGN_COMPLETE') {
+      return;
+    }
+
+    console.log('🛑 Call ended. Waiting for background sync signal...');
     setCallStatus('COMPLETED');
     stopTimer();
-    
-    // 3 second cool-down before moving to next lead
-    setTimeout(() => {
-      if (currentIndex + 1 < leads.length) {
-        setCallStatus('COOLDOWN');
-        setTimeout(() => {
-          setCurrentIndex(prev => prev + 1);
-        }, 1000);
-      } else {
-        setCallStatus('CAMPAIGN_COMPLETE');
-      }
-    }, 3000);
   };
+
+  useEffect(() => {
+    if (callStatus === 'ACTIVE') {
+      startTimer();
+    }
+  }, [callStatus]);
 
   // Auto-start next call when currentIndex changes (if already in campaign mode)
   useEffect(() => {
@@ -280,10 +338,10 @@ export default function AutoDialerPage() {
                         key={i}
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className={`flex ${m.role === 'ai' ? 'justify-start' : 'justify-end'}`}
+                        className={`flex ${m.role === 'agent' ? 'justify-start' : 'justify-end'}`}
                        >
                          <div className={`max-w-[80%] px-5 py-3 rounded-2xl text-sm ${
-                           m.role === 'ai' 
+                           m.role === 'agent' 
                             ? 'bg-white/5 border border-white/10 rounded-tl-none' 
                             : 'bg-indigo-600/20 border border-indigo-500/20 text-indigo-100 rounded-tr-none'
                          }`}>
@@ -295,7 +353,7 @@ export default function AutoDialerPage() {
                    
                    {callStatus === 'COMPLETED' && (
                      <div className="p-6 bg-indigo-600 text-center font-black text-sm tracking-widest uppercase animate-pulse">
-                        Call Completed. Moving to next lead...
+                        Syncing post-call data...
                      </div>
                    )}
                 </div>

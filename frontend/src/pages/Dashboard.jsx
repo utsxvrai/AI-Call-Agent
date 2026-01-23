@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { Calendar, Users, ArrowRight, Play, Upload, Clock, Search } from 'lucide-react';
+import { Calendar, Users, ArrowRight, Play, Upload, Clock, Search, Trash2 } from 'lucide-react';
 import ExcelUpload from '../components/ExcelUpload';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api/v1';
@@ -28,6 +28,21 @@ export default function Dashboard() {
   useEffect(() => {
     fetchBatches();
   }, []);
+
+  const handleDeleteBatch = async (e, batchId) => {
+    e.stopPropagation();
+    if (!window.confirm("Are you sure you want to delete this campaign? All lead data will be lost.")) {
+      return;
+    }
+
+    try {
+      await axios.delete(`${API_BASE_URL}/leads/batch/${batchId}`);
+      setBatches(batches.filter(b => b.id !== batchId));
+    } catch (error) {
+      console.error('Failed to delete batch:', error);
+      alert('Failed to delete batch');
+    }
+  };
 
   const formatDate = (dateStr) => {
     const date = new Date(dateStr);
@@ -117,7 +132,14 @@ export default function Dashboard() {
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
+                   <div className="flex items-center gap-3">
+                    <button 
+                      onClick={(e) => handleDeleteBatch(e, batch.id)}
+                      className="p-3 bg-red-500/10 rounded-xl hover:bg-red-500/20 text-red-500 transition-colors"
+                      title="Delete Campaign"
+                    >
+                      <Trash2 size={18} />
+                    </button>
                     <button className="p-3 bg-white/5 rounded-xl hover:bg-white/10 text-slate-400 transition-colors">
                       <Users size={18} />
                     </button>

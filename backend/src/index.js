@@ -4,10 +4,14 @@ const express = require('express');
 const http = require('http');
 const routes = require('./routes');
 const setupOutboundMediaWS = require('./ws/outbound-media.ws');
+const { init: initSocket } = require('./services/socket-service');
 
 const app = express();
 const server = http.createServer(app);
 const cors = require('cors');
+
+// Initialize Socket.io for frontend communication
+initSocket(server);
 
 // Setup Twilio WebSocket handlers
 setupOutboundMediaWS(server);

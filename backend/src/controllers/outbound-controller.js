@@ -51,16 +51,28 @@ const OutboundController = {
 
     if (leadId) {
       const supabase = require('../services/supabase-service');
-      
+      const { emit: emitSocket } = require('../services/socket-service');
+
       // Map Twilio statuses to your application statuses
       let appStatus = 'pending';
+      const failedStatuses = ['busy', 'no-answer', 'canceled', 'failed'];
       if (CallStatus === 'in-progress' || CallStatus === 'answered') appStatus = 'calling';
-      if (['completed', 'busy', 'no-answer', 'canceled', 'failed'].includes(CallStatus)) appStatus = 'called';
+      if (['completed', ...failedStatuses].includes(CallStatus)) appStatus = 'called';
 
       await supabase
         .from('leads')
         .update({ call_status: appStatus })
         .eq('id', leadId);
+
+      // Notify UI via Socket.io
+      emitSocket('callStatus', { status: CallStatus, leadId });
+      console.log(`📡 [SOCKET] Emitted callStatus: ${CallStatus}`);
+
+      // If call failed/was not picked up, tell the frontend to move to next lead immediately
+      if (failedStatuses.includes(CallStatus)) {
+        console.log(`📡 [SOCKET] Call not picked up (${CallStatus}). Signaling syncComplete.`);
+        emitSocket('syncComplete', { leadId, status: CallStatus });
+      }
     }
 
     res.sendStatus(200);

@@ -4,24 +4,34 @@ const supabase = require('../services/supabase-service');
 require('dotenv').config();
 
 function setupOutboundMediaWS(server) {
-  const wss = new WebSocket.Server({
-    server,
-    path: '/outbound-media-stream',
-  });
+  // Use noServer: true to prevent conflict with Socket.io on the same port
+  const wss = new WebSocket.Server({ noServer: true });
 
-  console.log(`🔌 Outbound Media WebSocket server listening on /outbound-media-stream`);
+  console.log(`🔌 Outbound Media WebSocket handler initialized`);
+
+  // Handle manual upgrade to delegate between Twilio and Socket.io
+  server.on('upgrade', (request, socket, head) => {
+    const { pathname } = new URL(request.url, `http://${request.headers.host}`);
+
+    if (pathname === '/outbound-media-stream') {
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        wss.emit('connection', ws, request);
+      });
+    }
+    // Socket.io handles its own upgrades automatically, so we just ignore others
+  });
 
   wss.on('connection', (connection, req) => {
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-    let leadId = url.searchParams.get('leadId'); 
-    let callSid = url.searchParams.get('callSid'); 
+    let leadId = url.searchParams.get('leadId');
+    let callSid = url.searchParams.get('callSid');
 
     console.log(`🔌 [STREAM] New Connection. URL: ${req.url}`);
     console.log(`🔌 [STREAM] Params - CallSid: ${callSid}, LeadId: ${leadId}`);
-    
+
     let streamSid = null;
     let interestCaptured = false;
-    let conversationId = null; 
+    let conversationId = null;
     const { ELEVENLABS_AGENT_ID, ELEVENLABS_API_KEY } = process.env;
 
     // Passing user_id in the URL is what populates the "User ID" field in the dashboard
@@ -39,9 +49,9 @@ function setupOutboundMediaWS(server) {
         console.log(`⚠️ [SYNC] Missing identifiers. CId: ${cId}, LId: ${lId}, Sid: ${sid}`);
         return;
       }
-      
-      console.log(`🕒 [SYNC] Waiting 15s for ElevenLabs to process analysis for ${cId}...`);
-      await new Promise(r => setTimeout(r, 15000)); 
+
+      console.log(`🕒 [SYNC] Waiting 10s for ElevenLabs analysis for ${cId}...`);
+      await new Promise(r => setTimeout(r, 10000)); 
 
       try {
         const axios = require('axios');
@@ -52,47 +62,31 @@ function setupOutboundMediaWS(server) {
 
         const analysis = response.data.analysis || {};
         const results = analysis.data_collection_results || {};
-        
         const userInterest = results.user_interest?.value;
         const endGoal = results.end_call_goal?.value;
 
-        // Interest is true if either field specifically says so
         const isInterested = userInterest === true || userInterest === "Success" || 
                              endGoal === true || endGoal === "Success";
 
-        console.log(`📊 [SYNC] Final Result: Interest=${isInterested}, CallGoal=${endGoal}`);
+        console.log(`📊 [SYNC] Result: Interest=${isInterested}`);
 
         let targetLeadId = lId;
-
-        // BACKUP: If leadId is null, find it using the Call SID
         if (!targetLeadId && sid) {
-          console.log(`🔍 [SYNC] Attempting backup lookup for CallSid: ${sid}`);
-          const { data } = await supabase
-            .from('leads')
-            .select('id')
-            .eq('twilio_call_sid', sid)
-            .single();
-          if (data) {
-            targetLeadId = data.id;
-            console.log(`✅ [SYNC] Found Lead ID: ${targetLeadId}`);
-          }
+          const { data } = await supabase.from('leads').select('id').eq('twilio_call_sid', sid).single();
+          if (data) targetLeadId = data.id;
         }
 
         if (targetLeadId) {
-          await supabase
-            .from('leads')
-            .update({ 
-              is_interested: isInterested,
-              call_status: 'called'
-            })
-            .eq('id', targetLeadId);
-          
-          console.log(`✅ [SYNC] Supabase updated with final interest for Lead: ${targetLeadId}`);
-        } else {
-          console.log(`❌ [SYNC] Could not find a lead to update.`);
+          await supabase.from('leads').update({ is_interested: isInterested, call_status: 'called' }).eq('id', targetLeadId);
+          console.log(`✅ [SYNC] Supabase updated for Lead: ${targetLeadId}`);
         }
       } catch (err) {
-        console.error(`❌ [SYNC] Failed to fetch final analysis:`, err.message);
+        console.error(`❌ [SYNC] Analysis fetch failed:`, err.message);
+      } finally {
+        const { emit: emitSocket } = require('../services/socket-service');
+        const finalId = lId || sid || 'unknown';
+        emitSocket('syncComplete', { leadId: finalId });
+        console.log(`📡 [SOCKET] syncComplete emitted (Safety) for ${finalId}`);
       }
     };
 
@@ -118,8 +112,8 @@ function setupOutboundMediaWS(server) {
     elevenLabsWs.on("open", async () => {
       console.log("[ELEVENLABS] Connection established");
 
-      let leadName = "there"; 
-      
+      let leadName = "there";
+
       // Fetch lead details if we have an ID
       if (leadId) {
         const { data } = await supabase.from('leads').select('name').eq('id', leadId).single();
@@ -143,10 +137,18 @@ function setupOutboundMediaWS(server) {
 
     elevenLabsWs.on("close", async () => {
       console.log(`[ELEVENLABS] Connection closed for ${callSid}`);
-      
+
+      const { emit: emitSocket } = require('../services/socket-service');
+
       // Trigger the background sync with all IDs as safety
       if (conversationId) {
         syncFinalAnalysis(conversationId, leadId, callSid);
+      } else if (leadId) {
+        // SAFETY: If we have a LeadId but no ConversationId, it means the call ended 
+        // before Sophie really started or analysis could happen. 
+        // Tell the frontend it's safe to move on.
+        console.log(`⚠️ [ELEVENLABS] Closing without conversation. Signaling skip for lead: ${leadId}`);
+        emitSocket('syncComplete', { leadId, status: 'ended_early' });
       }
 
       if (leadId && !interestCaptured) {
@@ -157,7 +159,7 @@ function setupOutboundMediaWS(server) {
     elevenLabsWs.on("message", (data) => {
       try {
         const message = JSON.parse(data);
-        
+
         // Capture Conversation ID from initiation metadata
         if (message.type === "conversation_initiation_metadata") {
           conversationId = message.conversation_initiation_metadata_event?.conversation_id;
@@ -195,36 +197,45 @@ function setupOutboundMediaWS(server) {
         case "agent_response":
           const responseText = message.agent_response_event?.agent_response || "";
           console.log(`🤖 Agent: ${responseText}`);
-          
+
+          // Notify UI
+          const { emit: emitSocket } = require('../services/socket-service');
+          emitSocket('transcript', { role: 'agent', text: responseText });
+
           // IMMEDIATE AUTOMATION: If agent says goodbye, hang up immediately 
-          // to prevent "Are you still there?" prompts.
           const lowerResponse = responseText.toLowerCase();
-          if (lowerResponse.includes("goodbye") || 
-              lowerResponse.includes("have a great day") || 
-              lowerResponse.includes("have a nice day")) {
-            
-            // Calculate dynamic delay: ~450ms per word + 3s buffer
+          if (lowerResponse.includes("goodbye") ||
+            lowerResponse.includes("have a great day") ||
+            lowerResponse.includes("have a nice day")) {
+
             const wordCount = responseText.split(' ').length;
-            const dynamicDelay = (wordCount * 350) + 3000; 
-            
+            const dynamicDelay = (wordCount * 350) + 3000;
+
             console.log(`👋 Closing detected. Delaying hangup for ${dynamicDelay}ms...`);
-            
+
             setTimeout(async () => {
               if (elevenLabsWs.readyState === WebSocket.OPEN) {
-                 elevenLabsWs.close();
+                elevenLabsWs.close();
               }
               await TwilioService.endCall(callSid);
             }, dynamicDelay);
           }
           break;
 
+        case "user_transcription":
+          const userText = message.user_transcription_event?.user_transcript || "";
+          console.log(`👤 User: ${userText}`);
+          const { emit: emitUserSocket } = require('../services/socket-service');
+          emitUserSocket('transcript', { role: 'user', text: userText });
+          break;
+
         case "user_interest":
           console.log(`🎯 [DATA] user_interest event:`, JSON.stringify(message.interest_event));
           if (message.interest_event?.interest_id === "end_call_goal" || message.interest_event?.interest_id === "user_interest") {
-            const isInterested = message.interest_event?.interested === true || 
-                               message.interest_event?.value === "Success" ||
-                               message.interest_event?.value === "true";
-            
+            const isInterested = message.interest_event?.interested === true ||
+              message.interest_event?.value === "Success" ||
+              message.interest_event?.value === "true";
+
             console.log(`✨ Interest Evaluated: ${isInterested}`);
             interestCaptured = true;
 
@@ -247,7 +258,7 @@ function setupOutboundMediaWS(server) {
             interestCaptured = true;
 
             if (leadId) {
-               supabase
+              supabase
                 .from('leads')
                 .update({ is_interested: isInterested, call_status: 'called' })
                 .eq('id', leadId)
@@ -271,7 +282,7 @@ function setupOutboundMediaWS(server) {
           case "start":
             streamSid = data.start.streamSid;
             if (!callSid || callSid === "unknown" || callSid === "null") {
-                callSid = data.start.callSid;
+              callSid = data.start.callSid;
             }
             console.log(`[STREAM] Started. StreamSid: ${streamSid}, CallSid: ${callSid}`);
             break;
@@ -291,8 +302,27 @@ function setupOutboundMediaWS(server) {
       }
     });
 
-    connection.on("close", () => {
+    connection.on("close", async () => {
+      console.log(`⚠️ [STREAM] Connection closed for CallSid: ${callSid}`);
       if (elevenLabsWs.readyState === WebSocket.OPEN) elevenLabsWs.close();
+
+      // FINAL SAFEGUARD: If the user hung up early and we haven't captured interest,
+      // mark as not interested and "hanged up" immediately to unblock the dialer.
+      if (leadId && !interestCaptured) {
+        console.log(`⚠️ Early cut detected. Marking lead ${leadId} as 'hanged up'.`);
+        const { emit: emitSocket } = require('../services/socket-service');
+        
+        // Update Supabase immediately
+        await supabase.from('leads')
+          .update({ 
+            call_status: 'hanged up',
+            is_interested: false 
+          })
+          .eq('id', leadId);
+
+        // Tell frontend it's safe to move on right now
+        emitSocket('syncComplete', { leadId, status: 'hanged up' });
+      }
     });
   });
 }
