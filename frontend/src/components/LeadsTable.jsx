@@ -1,103 +1,123 @@
 import React from 'react';
-import { Phone, CheckCircle, XCircle, Clock, Trash2, User } from 'lucide-react';
+import { Phone, CheckCircle, XCircle, Clock, Trash2, User, MoreHorizontal, Activity } from 'lucide-react';
+import { motion } from 'framer-motion';
 
 export default function LeadsTable({ leads, onSelectLead, isLoading }) {
-  const getStatusIcon = (status, isInterested) => {
-    if (status === 'called') {
-      return isInterested 
-        ? <CheckCircle size={16} className="text-green-400" />
-        : <XCircle size={16} className="text-red-400" />;
+  const getStatusConfig = (status, isInterested) => {
+    if (status === 'called' || status === 'hanged up') {
+      if (isInterested) return {
+        icon: <CheckCircle size={14} className="text-green-400" />,
+        text: 'Interested',
+        color: 'text-green-400',
+        bg: 'bg-green-400/5',
+        border: 'border-green-400/10'
+      };
+      return {
+        icon: <XCircle size={14} className="text-red-400" />,
+        text: status === 'hanged up' ? 'Hanged Up' : 'Not Interested',
+        color: 'text-red-400',
+        bg: 'bg-red-400/5',
+        border: 'border-red-400/10'
+      };
     }
-    return <Clock size={16} className="text-slate-500" />;
-  };
-
-  const getStatusText = (status, isInterested) => {
-    if (status === 'called') {
-      return isInterested ? 'Interested' : 'Not Interested';
-    }
-    return 'Pending';
+    if (status === 'calling') return {
+      icon: <Activity size={14} className="text-indigo-400 animate-pulse" />,
+      text: 'Calling',
+      color: 'text-indigo-400',
+      bg: 'bg-indigo-400/5',
+      border: 'border-indigo-400/10'
+    };
+    return {
+      icon: <Clock size={14} className="text-slate-500" />,
+      text: 'Waiting',
+      color: 'text-slate-500',
+      bg: 'bg-slate-500/5',
+      border: 'border-slate-500/10'
+    };
   };
 
   if (isLoading) {
     return (
-      <div className="h-40 flex items-center justify-center text-slate-500 italic">
-        Loading leads...
+      <div className="py-20 flex flex-col items-center justify-center text-slate-500">
+        <div className="w-8 h-8 border-2 border-slate-800 border-t-indigo-500 rounded-full animate-spin mb-3" />
+        <p className="font-bold tracking-widest text-[10px] uppercase opacity-50">Syncing...</p>
       </div>
     );
   }
 
   return (
-    <div className="bg-slate-900/40 backdrop-blur-2xl border border-slate-800/50 rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col">
-      <div className="p-6 border-b border-slate-800/50 flex items-center justify-between bg-slate-900/20">
-        <h2 className="text-xl font-bold tracking-tight flex items-center gap-3">
-          <User size={24} className="text-indigo-400" />
-          Lead Pipeline
-        </h2>
-        <span className="text-xs font-bold bg-slate-800 px-3 py-1 rounded-full text-slate-400">
-          {leads.length} TOTAL
-        </span>
-      </div>
-
-      <div className="overflow-x-auto">
-        <table className="w-full text-left">
-          <thead>
-            <tr className="border-b border-slate-800/50 text-slate-500 text-xs font-bold uppercase tracking-widest bg-slate-950/20">
-              <th className="px-6 py-4">Lead Info</th>
-              <th className="px-6 py-4 text-center">Status</th>
-              <th className="px-6 py-4 text-right">Action</th>
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[600px]">
+        <thead>
+          <tr className="text-slate-500 text-[9px] font-black uppercase tracking-[0.15em] border-b border-white/5 bg-slate-950/10">
+            <th className="px-6 py-4 text-left">Target Profile</th>
+            <th className="px-6 py-4 text-center">Status</th>
+            <th className="px-6 py-4 text-right">Operation</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-white/5">
+          {leads.length === 0 ? (
+            <tr>
+              <td colSpan="3" className="px-6 py-20 text-center text-slate-600 text-xs font-medium italic">
+                No records found in this dataset.
+              </td>
             </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-800/30">
-            {leads.length === 0 ? (
-              <tr>
-                <td colSpan="3" className="px-6 py-12 text-center text-slate-600 italic">
-                  No leads imported yet. Upload an Excel sheet to get started.
-                </td>
-              </tr>
-            ) : (
-              leads.map((lead) => (
-                <tr key={lead.id} className="group hover:bg-slate-800/20 transition-colors">
+          ) : (
+            leads.map((lead, i) => {
+              const config = getStatusConfig(lead.call_status, lead.is_interested);
+              return (
+                <motion.tr 
+                  key={lead.id}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: i * 0.01 }}
+                  className="group hover:bg-white/[0.02] transition-colors"
+                >
                   <td className="px-6 py-4">
-                    <div className="font-bold text-slate-200">{lead.name}</div>
-                    <div className="text-xs text-slate-500 font-mono mt-1">{lead.number}</div>
-                    {lead.description && (
-                      <div className="text-[10px] text-slate-600 mt-1 italic truncate max-w-[200px]">
-                        {lead.description}
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 bg-slate-800/50 rounded-lg flex items-center justify-center text-slate-500 group-hover:text-indigo-400 transition-colors">
+                        <User size={16} />
                       </div>
-                    )}
+                      <div>
+                        <div className="font-bold text-sm text-white group-hover:text-indigo-400 transition-colors">
+                          {lead.name}
+                        </div>
+                        <div className="text-[10px] text-slate-600 font-mono mt-0.5 tracking-tight">
+                          {lead.number}
+                        </div>
+                      </div>
+                    </div>
                   </td>
                   <td className="px-6 py-4">
-                    <div className="flex flex-col items-center gap-1">
-                      {getStatusIcon(lead.call_status, lead.is_interested)}
-                      <span className={`text-[10px] font-bold uppercase tracking-tighter ${
-                        lead.call_status === 'called' 
-                          ? (lead.is_interested ? 'text-green-500' : 'text-red-500')
-                          : 'text-slate-500'
-                      }`}>
-                        {getStatusText(lead.call_status, lead.is_interested)}
-                      </span>
+                    <div className="flex justify-center">
+                      <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full border ${config.bg} ${config.border} ${config.color}`}>
+                        {config.icon}
+                        <span className="text-[9px] font-black uppercase tracking-widest">
+                          {config.text}
+                        </span>
+                      </div>
                     </div>
                   </td>
                   <td className="px-6 py-4 text-right">
                     <button
                       onClick={() => onSelectLead(lead)}
-                      disabled={lead.call_status === 'called'}
-                      className={`px-4 py-2 rounded-xl text-xs font-black flex items-center gap-2 ml-auto transition-all ${
-                        lead.call_status === 'called'
-                          ? 'bg-slate-800 text-slate-600 cursor-not-allowed'
-                          : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg'
+                      disabled={lead.call_status === 'called' || lead.call_status === 'calling'}
+                      className={`px-4 py-2 rounded-lg text-[9px] font-black tracking-widest uppercase flex items-center gap-2 ml-auto transition-all active:scale-95 ${
+                        lead.call_status === 'called' || lead.call_status === 'calling'
+                          ? 'bg-slate-900/50 text-slate-700 cursor-not-allowed border border-white/5'
+                          : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-xl shadow-indigo-600/10'
                       }`}
                     >
-                      <Phone size={14} />
-                      {lead.call_status === 'called' ? 'RE-CALL' : 'CALL'}
+                      <Phone size={12} />
+                      {lead.call_status === 'called' ? 'SYCHRONIZED' : lead.call_status === 'calling' ? 'ACTIVE' : 'DIAL'}
                     </button>
                   </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+                </motion.tr>
+              );
+            })
+          )}
+        </tbody>
+      </table>
     </div>
   );
 }

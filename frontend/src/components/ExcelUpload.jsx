@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import * as XLSX from 'xlsx';
-import { Upload, FileSpreadsheet, X, Check, Loader2 } from 'lucide-react';
+import { Upload, FileSpreadsheet, X, Check, Loader2, Database } from 'lucide-react';
 import axios from 'axios';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api/v1';
 
@@ -25,7 +26,6 @@ export default function ExcelUpload({ onUploadSuccess }) {
                 const ws = wb.Sheets[wsname];
                 const rawData = XLSX.utils.sheet_to_json(ws);
 
-                // Normalize keys (lowercase and trim) for robustness
                 const normalizedData = rawData.map(row => {
                     const newRow = {};
                     Object.keys(row).forEach(key => {
@@ -35,24 +35,22 @@ export default function ExcelUpload({ onUploadSuccess }) {
                     return newRow;
                 });
 
-                // Basic validation
                 if (normalizedData.length === 0) {
-                    setError("Sheet is empty");
+                    setError("No data found.");
                     return;
                 }
 
                 const requiredColumns = ['name', 'number'];
-                const firstRow = normalizedData[0];
-                const missing = requiredColumns.filter(col => !(col in firstRow));
+                const missing = requiredColumns.filter(col => !(col in normalizedData[0]));
 
                 if (missing.length > 0) {
-                    setError(`Missing columns: ${missing.join(', ')}`);
+                    setError(`Missing: ${missing.join(', ').toUpperCase()}`);
                     return;
                 }
 
                 setPreview(normalizedData);
             } catch (err) {
-                setError("Failed to parse Excel file");
+                setError("Invalid file format.");
                 console.error(err);
             }
         };
@@ -70,84 +68,81 @@ export default function ExcelUpload({ onUploadSuccess }) {
             setPreview(null);
             if (onUploadSuccess) onUploadSuccess();
         } catch (err) {
-            setError(err.response?.data?.error || "Failed to upload leads");
+            setError(err.response?.data?.error || "Upload failed.");
         } finally {
             setIsUploading(false);
         }
     };
 
     return (
-        <div className="bg-slate-900/40 backdrop-blur-2xl border border-slate-800/50 p-6 rounded-[2rem] shadow-xl">
-            <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-bold flex items-center gap-2">
-                    <Upload size={20} className="text-indigo-400" />
-                    Import Leads
-                </h3>
-                {preview && (
-                    <button
-                        onClick={() => setPreview(null)}
-                        className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 transition-colors"
+        <div className="space-y-4">
+            <AnimatePresence mode="wait">
+                {!preview ? (
+                    <motion.div
+                        key="dropzone"
+                        initial={{ opacity: 0, y: 5 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -5 }}
                     >
-                        <X size={18} />
-                    </button>
-                )}
-            </div>
+                        <label className="flex flex-col items-center justify-center w-full h-40 border-2 border-dashed border-indigo-500/10 rounded-2xl cursor-pointer hover:bg-indigo-500/5 hover:border-indigo-500/30 transition-all group relative overflow-hidden">
+                            <div className="flex flex-col items-center justify-center relative z-10 px-6 text-center">
+                                <div className="w-12 h-12 bg-indigo-500/10 rounded-xl flex items-center justify-center mb-3 group-hover:scale-105 transition-transform text-indigo-400">
+                                    <FileSpreadsheet size={24} />
+                                </div>
+                                <p className="text-sm font-bold text-white mb-0.5">Ingest Lead Data</p>
+                                <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest">XLSX • Name, Number Required</p>
+                            </div>
+                            <input type="file" className="hidden" accept=".xlsx, .xls, .csv" onChange={handleFileUpload} />
+                        </label>
+                    </motion.div>
+                ) : (
+                    <motion.div
+                        key="preview"
+                        initial={{ opacity: 0, scale: 0.98 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="space-y-4"
+                    >
+                        <div className="bg-slate-950/30 rounded-2xl p-6 border border-white/5 relative group">
+                            <div className="absolute top-0 right-0 p-3">
+                                <button onClick={() => setPreview(null)} className="p-1.5 hover:bg-white/5 rounded-lg text-slate-500 transition-colors">
+                                    <X size={16} />
+                                </button>
+                            </div>
 
-            {!preview ? (
-                <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-slate-800 rounded-2xl cursor-pointer hover:bg-slate-800/30 hover:border-indigo-500/50 transition-all group">
-                    <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                        <FileSpreadsheet size={32} className="text-slate-500 group-hover:text-indigo-400 transition-colors mb-2" />
-                        <p className="text-sm text-slate-500">
-                            <span className="font-bold">Click to upload</span> or drag and drop
-                        </p>
-                        <p className="text-xs text-slate-600 mt-1">Excel (.xlsx) with name, number, description</p>
-                    </div>
-                    <input type="file" className="hidden" accept=".xlsx, .xls" onChange={handleFileUpload} />
-                </label>
-            ) : (
-                <div className="space-y-4">
-                    <div className="bg-slate-950/50 rounded-xl p-4 border border-slate-800 max-h-40 overflow-y-auto">
-                        <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Preview ({preview.length} leads)</p>
-                        <table className="w-full text-left text-sm">
-                            <thead>
-                                <tr className="text-slate-600 border-b border-slate-800">
-                                    <th className="pb-2 font-medium">Name</th>
-                                    <th className="pb-2 font-medium">Number</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {preview.slice(0, 5).map((row, i) => (
-                                    <tr key={i} className="text-slate-400 border-b border-slate-900/50 last:border-0">
-                                        <td className="py-2">{row.name}</td>
-                                        <td className="py-2 font-mono">{row.number}</td>
-                                    </tr>
+                            <div className="flex items-center gap-3 mb-6">
+                                <div className="p-2 bg-indigo-500/10 rounded-lg">
+                                    <Database size={16} className="text-indigo-400" />
+                                </div>
+                                <div>
+                                    <h4 className="text-sm font-bold text-white">Validation Success</h4>
+                                    <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest">{preview.length} Entries Ready</p>
+                                </div>
+                            </div>
+
+                            <div className="space-y-2 mb-6">
+                                {preview.slice(0, 3).map((row, i) => (
+                                    <div key={i} className="flex items-center justify-between py-2 px-4 bg-white/[0.02] rounded-xl border border-white/5 text-xs text-slate-300">
+                                        <span className="font-bold">{row.name}</span>
+                                        <span className="font-mono text-[10px] text-slate-500">{row.number}</span>
+                                    </div>
                                 ))}
-                                {preview.length > 5 && (
-                                    <tr>
-                                        <td colSpan="2" className="py-2 text-center text-slate-600 text-xs italic">
-                                            + {preview.length - 5} more rows...
-                                        </td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
+                            </div>
 
-                    <button
-                        onClick={confirmUpload}
-                        disabled={isUploading}
-                        className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold flex items-center justify-center gap-2 transition-all disabled:opacity-50"
-                    >
-                        {isUploading ? <Loader2 size={18} className="animate-spin" /> : <Check size={18} />}
-                        IMPORT LEADS
-                    </button>
-                </div>
-            )}
+                            <button
+                                onClick={confirmUpload}
+                                disabled={isUploading}
+                                className="w-full py-3 rounded-xl bg-white text-black font-black text-sm flex items-center justify-center gap-2 transition-all hover:bg-indigo-50 active:scale-95 disabled:opacity-50"
+                            >
+                                {isUploading ? <Loader2 size={18} className="animate-spin" /> : <><Check size={18} /> CONFIRM UPLOAD</>}
+                            </button>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
             {error && (
-                <div className="mt-4 p-3 rounded-xl bg-red-400/10 border border-red-400/20 text-red-400 text-sm flex items-center gap-2">
-                    <X size={16} />
-                    {error}
+                <div className="p-3 rounded-xl bg-red-500/5 border border-red-500/10 text-red-500 text-[10px] font-black tracking-widest uppercase flex items-center gap-2">
+                    <X size={14} /> {error}
                 </div>
             )}
         </div>

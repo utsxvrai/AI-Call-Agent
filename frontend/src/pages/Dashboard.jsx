@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { Calendar, Users, ArrowRight, Play, Upload, Clock, Search, Trash2 } from 'lucide-react';
+import { Calendar, Users, ArrowRight, Play, Upload, Clock, Search, Trash2, LayoutGrid, Plus } from 'lucide-react';
 import ExcelUpload from '../components/ExcelUpload';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api/v1';
@@ -56,102 +56,128 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-[#020617] text-slate-200 p-8 sm:p-12">
-      <div className="max-w-6xl mx-auto">
-        <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-12 gap-6">
-          <div>
-            <h1 className="text-4xl font-black tracking-tight text-white mb-2">Campaign Console</h1>
-            <p className="text-slate-500">Manage your outreach batches and AI agents.</p>
-          </div>
-          <button
+    <div className="min-h-screen bg-[#020617] text-slate-200 relative overflow-x-hidden p-6 sm:p-10">
+      {/* Background */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden opacity-50">
+        <div className="absolute top-0 left-0 w-[40%] h-[40%] bg-indigo-600/10 blur-[100px] rounded-full" />
+        <div className="absolute top-[20%] right-0 w-[30%] h-[50%] bg-purple-600/5 blur-[100px] rounded-full" />
+      </div>
+
+      <div className="max-w-6xl mx-auto relative z-10">
+        <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-10 gap-6">
+          <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}>
+            <div className="flex items-center gap-3 mb-1">
+              <LayoutGrid size={24} className="text-indigo-400" />
+              <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">Campaigns</h1>
+            </div>
+            <p className="text-slate-500 text-sm font-medium">Manage and monitor AI automation batches.</p>
+          </motion.div>
+
+          <motion.button
+            initial={{ opacity: 0, x: 10 }}
+            animate={{ opacity: 1, x: 0 }}
             onClick={() => setShowUpload(!showUpload)}
-            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-3 rounded-2xl font-bold transition-all shadow-lg shadow-indigo-500/20 active:scale-95"
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold transition-all text-sm active:scale-95 ${
+              showUpload 
+              ? 'bg-slate-800 text-slate-300' 
+              : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-xl shadow-indigo-500/10'
+            }`}
           >
-            {showUpload ? <Clock size={20} /> : <Upload size={20} />}
-            {showUpload ? 'View Batches' : 'New Campaign'}
-          </button>
+            {showUpload ? <Clock size={18} /> : <Plus size={18} />}
+            {showUpload ? 'View All' : 'New Campaign'}
+          </motion.button>
         </header>
 
-        {showUpload ? (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="max-w-xl"
-          >
-            <ExcelUpload onUploadSuccess={() => {
-              fetchBatches();
-              setShowUpload(false);
-            }} />
-          </motion.div>
-        ) : (
-          <div className="grid gap-6">
-            {isLoading ? (
-              <div className="py-20 flex flex-col items-center justify-center text-slate-600 gap-4">
-                <div className="w-12 h-12 border-4 border-slate-800 border-t-indigo-500 rounded-full animate-spin" />
-                <p className="font-medium">Loading your campaigns...</p>
+        <AnimatePresence mode="wait">
+          {showUpload ? (
+            <motion.div
+              key="upload"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="max-w-xl mx-auto bg-slate-900/40 backdrop-blur-xl border border-white/5 p-8 rounded-3xl"
+            >
+              <div className="mb-6">
+                <h2 className="text-xl font-bold text-white mb-1">Initialize Batch</h2>
+                <p className="text-sm text-slate-500">Upload your target list to begin.</p>
               </div>
-            ) : batches.length === 0 ? (
-              <div className="py-20 border-2 border-dashed border-slate-800 rounded-[3rem] flex flex-col items-center justify-center text-center">
-                <div className="w-16 h-16 bg-slate-900 rounded-3xl flex items-center justify-center mb-6 text-slate-500">
-                  <Calendar size={32} />
+              <ExcelUpload onUploadSuccess={() => {
+                fetchBatches();
+                setShowUpload(false);
+              }} />
+            </motion.div>
+          ) : (
+            <motion.div 
+              key="list"
+              className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3"
+            >
+              {isLoading ? (
+                Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="h-48 bg-slate-900/40 animate-pulse rounded-2xl border border-white/5" />
+                ))
+              ) : batches.length === 0 ? (
+                <div className="col-span-full py-20 border-2 border-dashed border-slate-800 rounded-3xl flex flex-col items-center text-center px-6">
+                  <div className="w-16 h-16 bg-slate-900 rounded-2xl flex items-center justify-center mb-4 text-slate-600 rotate-6">
+                    <LayoutGrid size={32} />
+                  </div>
+                  <h3 className="text-lg font-bold text-white mb-2">No campaigns yet</h3>
+                  <p className="text-slate-500 max-w-xs text-sm mb-8 font-medium">Launch your first AI outreach batch to see statistics and insights here.</p>
+                  <button
+                    onClick={() => setShowUpload(true)}
+                    className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-black text-sm hover:scale-105 active:scale-95 transition-all shadow-xl shadow-indigo-600/20"
+                  >
+                    KICKOFF NOW
+                  </button>
                 </div>
-                <h3 className="text-xl font-bold text-white mb-2">No campaigns yet</h3>
-                <p className="text-slate-500 max-w-xs mb-8">Upload an Excel sheet to start your first AI outreach campaign.</p>
-                <button
-                  onClick={() => setShowUpload(true)}
-                  className="text-indigo-400 font-bold hover:underline flex items-center gap-2"
-                >
-                  Get started now <ArrowRight size={16} />
-                </button>
-              </div>
-            ) : (
-              batches.map((batch, i) => (
-                <motion.div
-                  key={batch.id}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: i * 0.05 }}
-                  onClick={() => navigate(`/batch/${batch.id}`)}
-                  className="group bg-slate-900/40 backdrop-blur-xl border border-white/5 p-6 rounded-[2rem] hover:bg-white/5 transition-all cursor-pointer flex items-center justify-between"
-                >
-                  <div className="flex items-center gap-6">
-                    <div className="w-14 h-14 bg-indigo-500/10 rounded-2xl flex items-center justify-center text-indigo-400 group-hover:scale-110 transition-transform">
-                      <Calendar size={24} />
+              ) : (
+                batches.map((batch, i) => (
+                  <motion.div
+                    key={batch.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.03 }}
+                    onClick={() => navigate(`/batch/${batch.id}`)}
+                    className="group bg-slate-900/40 backdrop-blur-md p-6 rounded-2xl hover:bg-slate-900/60 border border-white/5 transition-all cursor-pointer relative overflow-hidden flex flex-col"
+                  >
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="w-10 h-10 bg-indigo-500/10 rounded-xl flex items-center justify-center text-indigo-400">
+                        <Calendar size={20} />
+                      </div>
+                      <button 
+                        onClick={(e) => handleDeleteBatch(e, batch.id)}
+                        className="p-2 hover:bg-red-500/10 rounded-lg text-slate-600 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                      >
+                        <Trash2 size={16} />
+                      </button>
                     </div>
-                    <div>
-                      <h3 className="text-lg font-bold text-white group-hover:text-indigo-400 transition-colors">
-                        Outreach - {formatDate(batch.date).split(',')[0]}
+
+                    <div className="mb-6">
+                      <h3 className="text-lg font-bold text-white group-hover:text-indigo-400 transition-colors line-clamp-1">
+                        {batch.name || `Outreach - ${new Date(batch.date).toLocaleDateString()}`}
                       </h3>
-                      <div className="flex items-center gap-4 mt-1">
-                        <span className="text-xs font-mono text-slate-500 flex items-center gap-1">
-                          <Clock size={12} /> {formatDate(batch.date).split(',')[1]}
+                      <div className="flex flex-wrap gap-2.5 mt-2">
+                         <span className="text-[10px] font-mono text-slate-500 flex items-center gap-1 uppercase tracking-tight">
+                          <Clock size={12} /> {formatDate(batch.date).split(',')[1].trim()}
                         </span>
-                        <span className="text-xs font-mono text-slate-500 flex items-center gap-1">
-                          <Search size={12} /> ID: {batch.id?.slice(0, 8) || 'N/A'}
+                        <span className="text-[10px] font-mono text-slate-500 flex items-center gap-1 uppercase tracking-tight">
+                          <Search size={12} /> ID: {batch.id?.slice(0, 8)}
                         </span>
                       </div>
                     </div>
-                  </div>
-                   <div className="flex items-center gap-3">
-                    <button 
-                      onClick={(e) => handleDeleteBatch(e, batch.id)}
-                      className="p-3 bg-red-500/10 rounded-xl hover:bg-red-500/20 text-red-500 transition-colors"
-                      title="Delete Campaign"
-                    >
-                      <Trash2 size={18} />
-                    </button>
-                    <button className="p-3 bg-white/5 rounded-xl hover:bg-white/10 text-slate-400 transition-colors">
-                      <Users size={18} />
-                    </button>
-                    <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity translate-x-4 group-hover:translate-x-0">
-                      <ArrowRight size={20} />
+
+                    <div className="mt-auto flex items-center justify-between pt-4 border-t border-white/5">
+                      <div className="flex items-center gap-2 text-slate-500 text-xs font-bold uppercase tracking-widest">
+                        <Users size={14} />
+                        Leads
+                      </div>
+                      <ArrowRight size={18} className="text-slate-700 group-hover:text-indigo-500 transition-colors" />
                     </div>
-                  </div>
-                </motion.div>
-              ))
-            )}
-          </div>
-        )}
+                  </motion.div>
+                ))
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );

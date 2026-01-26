@@ -2,31 +2,45 @@ const TwilioService = require('../services/twilio-service');
 
 const OutboundController = {
   async initiateCall(req, res) {
-    const { number, leadId } = req.body;
+    const { number, leadId, name } = req.body;
     const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER } = process.env;
+
+    
 
     if (!number) {
       return res.status(400).json({ error: 'Number is required' });
     }
 
-    const twilio = require('twilio');
-    const twilioClient = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+    // Normalized Number for Twilio (Trial accounts need +)
+    let formattedNumber = number.trim();
+    if (!formattedNumber.startsWith('+')) {
+      formattedNumber = `+${formattedNumber}`;
+    }
 
-    console.log("[CALL] Initiating outbound call to:", number, "LeadId:", leadId);
+    console.log(`[CALL] Initiating Outbound. To: ${formattedNumber}, LeadId: ${leadId}, Name: ${name}`);
+
+    const twilio = require('twilio');
+    const twilioClient = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, {
+  timeout: 30000 // Increases allowed connection time to 30 seconds
+});
 
     try {
       const baseUrl = process.env.BASE_URL ? process.env.BASE_URL.replace(/\/$/, "") : `https://${req.headers.host}`;
 
+      // Construct TwiML URL with identity data
+      const twimlUrl = new URL(`${baseUrl}/api/v1/outbound/outgoing-call-twiml`);
+      if (leadId) twimlUrl.searchParams.append('leadId', leadId);
+
       const call = await twilioClient.calls.create({
         from: TWILIO_PHONE_NUMBER,
-        to: number,
-        url: `${baseUrl}/api/v1/outbound/outgoing-call-twiml?leadId=${leadId || ''}`,
+        to: formattedNumber,
+        url: twimlUrl.toString(),
         statusCallback: `${baseUrl}/api/v1/outbound/status-callback${leadId ? `?leadId=${leadId}` : ''}`,
         statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
         statusCallbackMethod: 'POST'
       });
 
-      // NEW: Store the Call SID in Supabase for reliable lead identification
+      // Save CallSID to Lead for recovery
       if (leadId) {
         const supabase = require('../services/supabase-service');
         await supabase
@@ -35,11 +49,11 @@ const OutboundController = {
           .eq('id', leadId);
       }
 
-      console.log("[CALL] Call initiated successfully:", call.sid);
+      console.log(`[CALL] Success. SID: ${call.sid}`);
       res.json({ message: 'Call initiated', callSid: call.sid });
     } catch (error) {
-      console.error("[ERROR] Failed to initiate call:", error.message);
-      res.status(500).json({ error: 'Failed to initiate call' });
+      console.error("[ERROR] Twilio API Error:", error.message);
+      res.status(500).json({ error: 'Failed to initiate call', details: error.message });
     }
   },
 
@@ -80,27 +94,17 @@ const OutboundController = {
 
   async generateTwiML(req, res) {
     try {
-      const data = req.method === 'POST' ? req.body : req.query;
-      const callSid = data.CallSid || "unknown";
-      // ALWAYS use query for leadId as we specifically passed it in the URL
       const leadId = req.query.leadId || "";
+      const callSid = req.body.CallSid || req.query.CallSid || "unknown";
 
-      console.log(`[TWIML] Generating TwiML. CallSid: ${callSid}, LeadId: ${leadId}`);
+      console.log(`[TWIML] Generating for SID: ${callSid}, Lead: ${leadId}`);
 
       const baseUrl = process.env.BASE_URL;
-      let wsHost;
-      if (baseUrl) {
-        try {
-          wsHost = new URL(baseUrl).host;
-        } catch (e) {
-          wsHost = req.headers.host;
-        }
-      } else {
-        wsHost = req.headers.host;
-      }
+      const wsHost = baseUrl ? new URL(baseUrl).host : req.headers.host;
 
       const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
+<Pause length="1" />
   <Connect>
     <Stream url="wss://${wsHost}/outbound-media-stream?callSid=${callSid}&amp;leadId=${leadId}" />
   </Connect>
