@@ -100,13 +100,15 @@ const OutboundController = {
       console.log(`[TWIML] Generating for SID: ${callSid}, Lead: ${leadId}`);
 
       const baseUrl = process.env.BASE_URL;
-      const wsHost = baseUrl ? new URL(baseUrl).host : req.headers.host;
+      const urlObj = baseUrl ? new URL(baseUrl) : null;
+      const wsHost = urlObj ? urlObj.host : req.headers.host;
+      const protocol = urlObj && urlObj.protocol === 'https:' ? 'wss' : 'ws';
 
       const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
 <Pause length="1" />
   <Connect>
-    <Stream url="wss://${wsHost}/outbound-media-stream?callSid=${callSid}&amp;leadId=${leadId}" />
+    <Stream url="${protocol}://${wsHost}/outbound-media-stream?callSid=${callSid}&amp;leadId=${leadId}" />
   </Connect>
   <Pause length="40" />
 </Response>`.trim();
