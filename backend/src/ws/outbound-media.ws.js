@@ -3,7 +3,6 @@ const TwilioService = require('../services/twilio-service');
 const supabase = require('../services/supabase-service');
 const socketService = require('../services/socket-service');
 const axios = require('axios');
-const fs = require('fs');
 require('dotenv').config();
 
 process.on("unhandledRejection", (reason, promise) => {
@@ -14,15 +13,13 @@ process.on("uncaughtException", (err) => {
 });
 
 function setupOutboundMediaWS(server) {
-  // Initialize WebSocket server without a standalone port
   const wss = new WebSocket.Server({ noServer: true });
 
   console.log(`🔌 Outbound Media WebSocket handler initialized`);
 
-  // Handle server upgrade event
   server.on('upgrade', (request, socket, head) => {
-    const url = new URL(request.url, `http://${request.headers.host}`);
-    if (url.pathname === '/outbound-media-stream') {
+    const { pathname } = new URL(request.url, `http://${request.headers.host}`);
+    if (pathname === '/outbound-media-stream') {
       wss.handleUpgrade(request, socket, head, (ws) => {
         wss.emit('connection', ws, request);
       });
@@ -31,59 +28,60 @@ function setupOutboundMediaWS(server) {
 
   wss.on('connection', (connection, req) => {
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-    
-    // Extract parameters directly from the URL
     let leadId = url.searchParams.get('leadId');
     let callSid = url.searchParams.get('callSid');
-    let leadName = url.searchParams.get('name') || "there";
 
-    console.log(`🔌 [STREAM] Connected. CallSid: ${callSid}, LeadId: ${leadId}, Name: ${leadName}`);
+    console.log(`🔌 [STREAM] Connected. CallSid: ${callSid}, LeadId: ${leadId}`);
 
     let streamSid = null;
     let interestCaptured = false;
     let conversationId = null;
     let elevenLabsWs = null;
     let elevenLabsReady = false;
+    let hasSynced = false;
     const { ELEVENLABS_AGENT_ID, ELEVENLABS_API_KEY } = process.env;
 
-    let hasSynced = false;
-
-    // Final Sync Helper
-    const syncFinalAnalysis = async (cId, lId, sid) => {
-      if (!cId || hasSynced) return;
+    // Helper to signal frontend to move to next lead
+    const finishAndSync = async (cId) => {
+      if (hasSynced) return;
       hasSynced = true;
-      
-      console.log(`🕒 [SYNC] Scheduled analysis for ${cId} in 10s...`);
-      await new Promise(r => setTimeout(r, 10000)); 
 
-      try {
-        const response = await axios.get(
-          `https://api.elevenlabs.io/v1/convai/conversations/${cId}`,
-          { headers: { 'xi-api-key': ELEVENLABS_API_KEY } }
-        );
+      console.log(`🕒 [SYNC] Starting post-call sync for Lead: ${leadId || 'unknown'}...`);
 
-        const analysis = response.data.analysis || {};
-        const isInterested = analysis.data_collection_results?.user_interest?.value === true ||
-                             analysis.data_collection_results?.end_call_goal?.value === true ||
-                             analysis.data_collection_results?.user_interest?.value === "Success";
+      if (cId) {
+        try {
+          // Wait briefly for ElevenLabs to process analysis
+          await new Promise(r => setTimeout(r, 4000));
+          
+          const response = await axios.get(
+            `https://api.elevenlabs.io/v1/convai/conversations/${cId}`,
+            { headers: { 'xi-api-key': ELEVENLABS_API_KEY }, timeout: 5000 }
+          );
 
-        console.log(`📊 [SYNC] ${cId} Interest Result: ${isInterested}`);
+          const analysis = response.data.analysis || {};
+          const isInterested = analysis.data_collection_results?.user_interest?.value === true ||
+                               analysis.data_collection_results?.end_call_goal?.value === true ||
+                               analysis.data_collection_results?.user_interest?.value === "Success";
 
-        let targetId = lId;
-        if (!targetId && sid) {
-          const { data } = await supabase.from('leads').select('id').eq('twilio_call_sid', sid).single();
-          if (data) targetId = data.id;
+          console.log(`📊 [SYNC] Analysis complete. Interested: ${isInterested}`);
+
+          if (leadId) {
+            await supabase.from('leads').update({ 
+              is_interested: isInterested, 
+              call_status: 'called' 
+            }).eq('id', leadId);
+          }
+        } catch (err) {
+          console.error(`❌ [SYNC] Analysis failed:`, err.message);
         }
-
-        if (targetId) {
-          await supabase.from('leads').update({ is_interested: isInterested, call_status: 'called' }).eq('id', targetId);
-          console.log(`✅ [SYNC] Supabase updated for ${targetId}`);
-        }
-      } catch (err) {
-        console.error(`❌ [SYNC] Analysis fetch failed:`, err.message);
-      } finally {
-        socketService.emit('syncComplete', { leadId: lId || sid });
+      } else if (leadId) {
+        // Fallback: No conversation happened
+        await supabase.from('leads').update({ call_status: 'hanged up' }).eq('id', leadId);
       }
+
+      // ALWAYS emit syncComplete to unblock the frontend
+      socketService.emit('syncComplete', { leadId: leadId || callSid || 'unknown' });
+      console.log(`📡 [SOCKET] syncComplete emitted for ${leadId || callSid}`);
     };
 
     const handleElevenLabsMessage = (data) => {
@@ -95,7 +93,6 @@ function setupOutboundMediaWS(server) {
           console.log(`🆔 [ELEVENLABS] ConvID: ${conversationId}`);
         }
 
-        // Handle Audio
         if (message.type === "audio" && message.audio_event?.audio_base_64) {
           connection.send(JSON.stringify({
             event: "media",
@@ -104,20 +101,16 @@ function setupOutboundMediaWS(server) {
           }));
         }
 
-        // Handle Interruptions
         if (message.type === "interruption") {
           connection.send(JSON.stringify({ event: "clear", streamSid }));
         }
 
-        // Handle Transcript
         if (message.type === "agent_response") {
           const text = message.agent_response_event?.agent_response || "";
           console.log(`🤖 Agent: ${text}`);
           socketService.emit('transcript', { role: 'agent', text });
 
-          // Auto-Hangup detection
-          const lower = text.toLowerCase();
-          if (lower.includes("goodbye") || lower.includes("have a great day") || lower.includes("have a nice day")) {
+          if (text.toLowerCase().includes("goodbye") || text.toLowerCase().includes("have a great day")) {
              setTimeout(async () => {
                if (elevenLabsWs && elevenLabsWs.readyState === WebSocket.OPEN) elevenLabsWs.close();
                await TwilioService.endCall(callSid);
@@ -131,11 +124,10 @@ function setupOutboundMediaWS(server) {
           socketService.emit('transcript', { role: 'user', text });
         }
 
-        // Real-time interest events
         if (message.type === "user_interest" || message.type === "json_data") {
            const val = message.interest_event?.interested || message.data?.user_interest;
            if (val === true || val === "Success") {
-              console.log("🎯 Interest detected!");
+              console.log("🎯 Interest captured in real-time!");
               interestCaptured = true;
               if (leadId) supabase.from('leads').update({ is_interested: true, call_status: 'called' }).eq('id', leadId).then(() => {});
            }
@@ -153,51 +145,35 @@ function setupOutboundMediaWS(server) {
           if (!callSid) callSid = data.start.callSid;
           console.log(`🚀 [STREAM] Start. StreamSID: ${streamSid}`);
 
-          // 🔥 NOW open ElevenLabs (NOT BEFORE)
-          console.log("Connecting to ElevenLabs WS...");
-
+          // Initialize ElevenLabs on start to avoid premature timeout
           elevenLabsWs = new WebSocket(
             `wss://api-global-preview.elevenlabs.io/v1/convai/conversation?agent_id=${ELEVENLABS_AGENT_ID}&user_id=${leadId || 'unknown'}`,
             { headers: { "xi-api-key": ELEVENLABS_API_KEY } }
           );
 
-          elevenLabsWs.on("open", async () => {
+          elevenLabsWs.on("open", () => {
             elevenLabsReady = true;
-            console.log("🟢 [ELEVENLABS] Handshake successful");
-
-            // Update local DB status if we know the lead
-            if (leadId) {
-              await supabase.from('leads').update({ call_status: 'calling' }).eq('id', leadId);
-            }
-
-            // Minimal initiation message
-            const initiationMessage = {
+            console.log("🟢 [ELEVENLABS] Connected");
+            const initMsg = {
               type: "conversation_initiation_client_data",
               conversation_config_override: {
                 asr: { user_input_audio_format: "ulaw_8000" },
                 tts: { agent_output_audio_format: "ulaw_8000" }
               }
             };
-            
-            elevenLabsWs.send(JSON.stringify(initiationMessage));
-          });
-
-          elevenLabsWs.on("error", (err) => {
-            console.error("🔴 [ELEVENLABS] WebSocket Error:", err.message);
-          });
-
-          elevenLabsWs.on("close", (code, reason) => {
-            console.log(`⚠️ [ELEVENLABS] WS closed: ${code} ${reason?.toString()}`);
-            elevenLabsReady = false;
+            elevenLabsWs.send(JSON.stringify(initMsg));
           });
 
           elevenLabsWs.on("message", handleElevenLabsMessage);
+          elevenLabsWs.on("error", (e) => console.error("🔴 [ELEVENLABS] WS Error:", e.message));
+          elevenLabsWs.on("close", () => {
+            console.log("⚠️ [ELEVENLABS] WS Closed");
+            elevenLabsReady = false;
+          });
 
         } else if (data.event === "media") {
           if (elevenLabsWs && elevenLabsReady && elevenLabsWs.readyState === WebSocket.OPEN) {
-            elevenLabsWs.send(JSON.stringify({
-              user_audio_chunk: data.media.payload,
-            }));
+            elevenLabsWs.send(JSON.stringify({ user_audio_chunk: data.media.payload }));
           }
         } else if (data.event === "stop") {
           if (elevenLabsWs) elevenLabsWs.close();
@@ -210,16 +186,9 @@ function setupOutboundMediaWS(server) {
     connection.on("close", async () => {
       console.log(`⚠️ [STREAM] Disconnected: ${callSid}`);
       if (elevenLabsWs && elevenLabsWs.readyState === WebSocket.OPEN) elevenLabsWs.close();
-
-      // Trigger sync if we have a conversation
-      if (conversationId) {
-        syncFinalAnalysis(conversationId, leadId, callSid);
-      } else if (leadId && !hasSynced) {
-        // Fallback for cases with no AI conversation (e.g. immediate hangup)
-        hasSynced = true;
-        await supabase.from('leads').update({ call_status: 'hanged up', is_interested: false }).eq('id', leadId);
-        socketService.emit('syncComplete', { leadId });
-      }
+      
+      // Trigger final sync
+      finishAndSync(conversationId);
     });
   });
 }
