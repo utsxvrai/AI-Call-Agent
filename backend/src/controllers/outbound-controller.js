@@ -128,7 +128,7 @@ const OutboundController = {
 
     const success = await TwilioService.endCall(callSid);
     if (success) {
-      res.json({ message: 'Call ended', callSid });
+      res.json({ message : 'Call ended', callSid });
     } else {
       res.status(500).json({ error: 'Failed to end call' });
     }

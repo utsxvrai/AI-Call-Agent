@@ -6,6 +6,13 @@ const axios = require('axios');
 const fs = require('fs');
 require('dotenv').config();
 
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("🔴 Unhandled Rejection at:", promise, "reason:", reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("🔴 Uncaught Exception thrown:", err);
+});
+
 function setupOutboundMediaWS(server) {
   // Initialize WebSocket server without a standalone port
   const wss = new WebSocket.Server({ noServer: true });
@@ -35,13 +42,9 @@ function setupOutboundMediaWS(server) {
     let streamSid = null;
     let interestCaptured = false;
     let conversationId = null;
+    let elevenLabsWs = null;
+    let elevenLabsReady = false;
     const { ELEVENLABS_AGENT_ID, ELEVENLABS_API_KEY } = process.env;
-
-    // Connect to ElevenLabs ConvAI
-    const elevenLabsWs = new WebSocket(
-      `wss://api-global-preview.elevenlabs.io/v1/convai/conversation?agent_id=${ELEVENLABS_AGENT_ID}&user_id=${leadId || 'unknown'}`,
-      { headers: { "xi-api-key": ELEVENLABS_API_KEY } }
-    );
 
     // Final Sync Helper
     const syncFinalAnalysis = async (cId, lId, sid) => {
@@ -80,31 +83,7 @@ function setupOutboundMediaWS(server) {
       }
     };
 
-    elevenLabsWs.on("open", async () => {
-      console.log("🟢 [ELEVENLABS] Handshake successful");
-
-      // Update local DB status if we know the lead
-      if (leadId) {
-        await supabase.from('leads').update({ call_status: 'calling' }).eq('id', leadId);
-      }
-
-      // Minimal initiation message
-      const initiationMessage = {
-        type: "conversation_initiation_client_data",
-        conversation_config_override: {
-          asr: { user_input_audio_format: "ulaw_8000" },
-          tts: { agent_output_audio_format: "ulaw_8000" }
-        }
-      };
-      
-      elevenLabsWs.send(JSON.stringify(initiationMessage));
-    });
-
-    elevenLabsWs.on("error", (err) => {
-      console.error("🔴 [ELEVENLABS] WebSocket Error:", err.message);
-    });
-
-    elevenLabsWs.on("message", (data) => {
+    const handleElevenLabsMessage = (data) => {
       try {
         const message = JSON.parse(data);
 
@@ -137,9 +116,9 @@ function setupOutboundMediaWS(server) {
           const lower = text.toLowerCase();
           if (lower.includes("goodbye") || lower.includes("have a great day") || lower.includes("have a nice day")) {
              setTimeout(async () => {
-               if (elevenLabsWs.readyState === WebSocket.OPEN) elevenLabsWs.close();
+               if (elevenLabsWs && elevenLabsWs.readyState === WebSocket.OPEN) elevenLabsWs.close();
                await TwilioService.endCall(callSid);
-             }, 3000);
+             }, 3500);
           }
         }
 
@@ -161,23 +140,64 @@ function setupOutboundMediaWS(server) {
       } catch (error) {
         console.error("🔴 [ELEVENLABS] Message error:", error.message);
       }
-    });
+    };
 
-    connection.on("message", (message) => {
+    connection.on("message", async (message) => {
       try {
         const data = JSON.parse(message);
         if (data.event === "start") {
           streamSid = data.start.streamSid;
           if (!callSid) callSid = data.start.callSid;
           console.log(`🚀 [STREAM] Start. StreamSID: ${streamSid}`);
+
+          // 🔥 NOW open ElevenLabs (NOT BEFORE)
+          console.log("Connecting to ElevenLabs WS...");
+
+          elevenLabsWs = new WebSocket(
+            `wss://api-global-preview.elevenlabs.io/v1/convai/conversation?agent_id=${ELEVENLABS_AGENT_ID}&user_id=${leadId || 'unknown'}`,
+            { headers: { "xi-api-key": ELEVENLABS_API_KEY } }
+          );
+
+          elevenLabsWs.on("open", async () => {
+            elevenLabsReady = true;
+            console.log("🟢 [ELEVENLABS] Handshake successful");
+
+            // Update local DB status if we know the lead
+            if (leadId) {
+              await supabase.from('leads').update({ call_status: 'calling' }).eq('id', leadId);
+            }
+
+            // Minimal initiation message
+            const initiationMessage = {
+              type: "conversation_initiation_client_data",
+              conversation_config_override: {
+                asr: { user_input_audio_format: "ulaw_8000" },
+                tts: { agent_output_audio_format: "ulaw_8000" }
+              }
+            };
+            
+            elevenLabsWs.send(JSON.stringify(initiationMessage));
+          });
+
+          elevenLabsWs.on("error", (err) => {
+            console.error("🔴 [ELEVENLABS] WebSocket Error:", err.message);
+          });
+
+          elevenLabsWs.on("close", (code, reason) => {
+            console.log(`⚠️ [ELEVENLABS] WS closed: ${code} ${reason?.toString()}`);
+            elevenLabsReady = false;
+          });
+
+          elevenLabsWs.on("message", handleElevenLabsMessage);
+
         } else if (data.event === "media") {
-          if (elevenLabsWs.readyState === WebSocket.OPEN) {
+          if (elevenLabsWs && elevenLabsReady && elevenLabsWs.readyState === WebSocket.OPEN) {
             elevenLabsWs.send(JSON.stringify({
-              user_audio_chunk: Buffer.from(data.media.payload, "base64").toString("base64"),
+              user_audio_chunk: data.media.payload,
             }));
           }
         } else if (data.event === "stop") {
-          elevenLabsWs.close();
+          if (elevenLabsWs) elevenLabsWs.close();
         }
       } catch (error) {
         console.error("🔴 [TWILIO] Connection message error:", error.message);
@@ -186,7 +206,7 @@ function setupOutboundMediaWS(server) {
 
     connection.on("close", async () => {
       console.log(`⚠️ [STREAM] Disconnected: ${callSid}`);
-      if (elevenLabsWs.readyState === WebSocket.OPEN) elevenLabsWs.close();
+      if (elevenLabsWs && elevenLabsWs.readyState === WebSocket.OPEN) elevenLabsWs.close();
 
       // Trigger sync if we have a conversation
       if (conversationId) syncFinalAnalysis(conversationId, leadId, callSid);
