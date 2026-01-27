@@ -46,9 +46,12 @@ function setupOutboundMediaWS(server) {
     let elevenLabsReady = false;
     const { ELEVENLABS_AGENT_ID, ELEVENLABS_API_KEY } = process.env;
 
+    let hasSynced = false;
+
     // Final Sync Helper
     const syncFinalAnalysis = async (cId, lId, sid) => {
-      if (!cId) return;
+      if (!cId || hasSynced) return;
+      hasSynced = true;
       
       console.log(`🕒 [SYNC] Scheduled analysis for ${cId} in 10s...`);
       await new Promise(r => setTimeout(r, 10000)); 
@@ -209,10 +212,11 @@ function setupOutboundMediaWS(server) {
       if (elevenLabsWs && elevenLabsWs.readyState === WebSocket.OPEN) elevenLabsWs.close();
 
       // Trigger sync if we have a conversation
-      if (conversationId) syncFinalAnalysis(conversationId, leadId, callSid);
-
-      // Early hangup safeguard
-      if (leadId && !interestCaptured) {
+      if (conversationId) {
+        syncFinalAnalysis(conversationId, leadId, callSid);
+      } else if (leadId && !hasSynced) {
+        // Fallback for cases with no AI conversation (e.g. immediate hangup)
+        hasSynced = true;
         await supabase.from('leads').update({ call_status: 'hanged up', is_interested: false }).eq('id', leadId);
         socketService.emit('syncComplete', { leadId });
       }

@@ -39,6 +39,8 @@ export default function AutoDialerPage() {
     }
   };
 
+  const processedLeadsRef = useRef(new Set());
+
   useEffect(() => {
     fetchLeads();
     const newSocket = io(SOCKET_URL, {
@@ -67,17 +69,31 @@ export default function AutoDialerPage() {
     });
 
     newSocket.on('syncComplete', (data) => {
-      setCallStatus(prev => {
-        const lds = leadsRef.current;
-        const idx = currentIndexRef.current;
+      const lds = leadsRef.current;
+      const idx = currentIndexRef.current;
+      const activeLeadId = lds[idx]?.id;
 
-        if (idx + 1 < lds.length) {
-          setCurrentIndex(prevIdx => prevIdx + 1);
-          return 'COOLDOWN';
-        } else {
-          return 'CAMPAIGN_COMPLETE';
+      // Only proceed if this sync is for our current lead or a fallback
+      // AND we haven't already processed this lead to prevent double skipping
+      if (activeLeadId && (data.leadId === activeLeadId || data.leadId === lds[idx]?.twilio_call_sid)) {
+        if (processedLeadsRef.current.has(activeLeadId)) {
+          console.log(`ℹ️ [SYNC] Already processed lead ${activeLeadId}, ignoring duplicate sync`);
+          return;
         }
-      });
+
+        processedLeadsRef.current.add(activeLeadId);
+        
+        setCallStatus(prev => {
+          if (idx + 1 < lds.length) {
+            console.log(`➡️ [SYNC] Moving to next lead from index ${idx}`);
+            setCurrentIndex(prevIdx => prevIdx + 1);
+            return 'COOLDOWN';
+          } else {
+            console.log(`🏁 [SYNC] Campaign complete`);
+            return 'CAMPAIGN_COMPLETE';
+          }
+        });
+      }
     });
 
     return () => {
