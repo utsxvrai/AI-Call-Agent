@@ -2,6 +2,7 @@ const WebSocket = require('ws');
 const TwilioService = require('../services/twilio-service');
 const supabase = require('../services/supabase-service');
 const socketService = require('../services/socket-service');
+const notificationService = require('../services/notification-service');
 const axios = require('axios');
 const fs = require('fs');
 require('dotenv').config();
@@ -57,11 +58,33 @@ function setupOutboundMediaWS(server) {
         );
 
         const analysis = response.data.analysis || {};
-        const isInterested = analysis.data_collection_results?.user_interest?.value === true ||
-                             analysis.data_collection_results?.end_call_goal?.value === true ||
-                             analysis.data_collection_results?.user_interest?.value === "Success";
+        console.log(`📊 [SYNC] Raw Analysis Data for ${cId}:`, JSON.stringify(analysis, null, 2));
 
-        console.log(`📊 [SYNC] ${cId} Interest Result: ${isInterested}`);
+        const dr = analysis.data_collection_results || {};
+        
+        // Robust interest check: handle booleans, strings, and different possible keys
+        let isInterested = false;
+        
+        // 1. Check specific known keys
+        if (dr.user_interest?.value === true || dr.user_interest?.value === "true" || dr.user_interest?.value === "Success") isInterested = true;
+        if (dr.end_call_goal?.value === true || dr.end_call_goal?.value === "true") isInterested = true;
+        if (dr.interest?.value === true || dr.interested?.value === true) isInterested = true;
+
+        // 2. Fallback: Search all keys for "interest" or "goal" that have truthy values
+        if (!isInterested) {
+          Object.keys(dr).forEach(key => {
+            const lowerKey = key.toLowerCase();
+            if (lowerKey.includes('interest') || lowerKey.includes('goal')) {
+              const val = dr[key]?.value;
+              if (val === true || val === "true" || val === "Success" || val === "Interested") {
+                console.log(`🎯 Found interest in dynamic key: ${key}`);
+                isInterested = true;
+              }
+            }
+          });
+        }
+
+        console.log(`🎯 [SYNC] ${cId} Final Interest Result: ${isInterested}`);
 
         let targetId = lId;
         if (!targetId && sid) {
@@ -70,8 +93,16 @@ function setupOutboundMediaWS(server) {
         }
 
         if (targetId) {
-          await supabase.from('leads').update({ is_interested: isInterested, call_status: 'called' }).eq('id', targetId);
-          console.log(`✅ [SYNC] Supabase updated for ${targetId}`);
+          const updateData = { 
+            is_interested: isInterested, 
+            call_status: 'called' 
+          };
+          
+          await supabase.from('leads').update(updateData).eq('id', targetId);
+          console.log(`✅ [SYNC] Supabase updated for ${targetId} with is_interested: ${isInterested}`);
+
+          // Trigger automated follow-ups in the background
+          notificationService.triggerCallSync(targetId, isInterested);
         }
       } catch (err) {
         console.error(`❌ [SYNC] Analysis fetch failed:`, err.message);
@@ -189,10 +220,11 @@ function setupOutboundMediaWS(server) {
       if (elevenLabsWs.readyState === WebSocket.OPEN) elevenLabsWs.close();
 
       // Trigger sync if we have a conversation
-      if (conversationId) syncFinalAnalysis(conversationId, leadId, callSid);
-
-      // Early hangup safeguard
-      if (leadId && !interestCaptured) {
+      if (conversationId) {
+        syncFinalAnalysis(conversationId, leadId, callSid);
+      } else if (leadId && !interestCaptured) {
+        // Early hangup safeguard - only if no conversation was established
+        console.log(`⚠️ [STREAM] Early hangup for ${leadId}. No conversationId to sync.`);
         await supabase.from('leads').update({ call_status: 'hanged up', is_interested: false }).eq('id', leadId);
         socketService.emit('syncComplete', { leadId });
       }
